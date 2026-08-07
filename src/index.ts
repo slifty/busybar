@@ -42,8 +42,6 @@ const main = async (): Promise<void> => {
 	log("press Ctrl-C to stop");
 
 	await runProgram(bar, program, log);
-
-	log("display cleared");
 };
 
 try {
