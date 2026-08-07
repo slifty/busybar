@@ -97,11 +97,20 @@ src/
 ├── index.ts        # Entry point: resolves the program, connects, hands off
 ├── program.ts      # The Program contract
 ├── runner.ts       # Runs a program until interrupted, then cleans up
+├── constants/
+│   └── time.ts         # Universal constants, not device- or program-specific
 └── programs/
     ├── index.ts        # Registry: name -> program
-    └── hello-world/
-        └── index.ts    # Scrolling greeting
+    ├── hello-world/
+    │   └── index.ts    # Scrolling greeting
+    └── random-emoji/
+        ├── emoji.ts    # The firmware's built-in emoji sprites
+        └── index.ts    # Picks one at random on a schedule
 ```
+
+`src/constants/` is for genuinely universal values (unit conversions and the
+like). Device facts belong in `src/config.ts`; anything only one program cares
+about belongs in that program's folder.
 
 The tool runs one **program** at a time — an operating mode — chosen by the
 `BUSYBAR_PROGRAM` environment variable and defaulting to `hello-world`.
@@ -138,10 +147,25 @@ against firmware reporting `api_semver` 25.0.0.
 - **`extra_large` is uppercase-only.** It renders lowercase input as capitals,
   and is wide enough that short strings overflow the 72px front display, which
   is what triggers scrolling.
-- **Draws are preempted by priority.** A draw is accepted when its priority is
-  at least that of the app currently on screen. Built-in apps sit at 10, an
-  active BUSY or CUSTOM focus session at 90, and the API default is 50. Losing
-  the race returns HTTP 409, so anything long-running has to expect it.
+- **Draws are preempted by priority.** Built-in apps sit at 10, an active BUSY
+  or CUSTOM focus session at 90, and the API default is 50. Losing the race
+  returns HTTP 409, so anything long-running has to expect it.
+- **Equal priority does not win, despite the docs.** The spec says a draw is
+  accepted when its priority is `>=` the current app's, and that equal-priority
+  requests from a different `application_name` override what is on screen.
+  Measured behaviour is stricter: while one application holds the screen at
+  priority 50, another application drawing at 50 gets 409, and only 51 or
+  higher succeeds. The practical consequence is that a program which exits
+  without clearing — especially one holding a `timeout: 0` element, which never
+  expires — locks every other program out of the display until something clears
+  it. `DELETE /api/display/draw` with no `application_name` clears everything.
+- **The firmware ships sprites.** `/ext/apps_assets/shared/images` holds emoji,
+  food, hearts, and status icons. Reference them from an image element with
+  `stock_path: "shared/<file>.image"`, which skips asset upload entirely.
+  `/api/storage/list?path=/ext/apps_assets/shared/images` enumerates them.
+- **`opacity` is required by the generated types.** `openapi-typescript` turns
+  documented defaults into required properties, so image elements must pass it
+  explicitly even though the device would default it.
 - **Draws expire unless told not to.** Every element carries a `timeout` in
   seconds, where `0` means "never expire", or a `display_until` timestamp.
   Anything drawn with a real timeout has to be redrawn to persist.

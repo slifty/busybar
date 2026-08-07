@@ -31,9 +31,10 @@ npm run dev                              # runs the default
 BUSYBAR_PROGRAM=hello-world npm run dev
 ```
 
-| Program       | What it does                                     |
-| ------------- | ------------------------------------------------ |
-| `hello-world` | Scrolls "Hello, World!" across the front display |
+| Program        | What it does                                      |
+| -------------- | ------------------------------------------------- |
+| `hello-world`  | Scrolls "Hello, World!" across the front display  |
+| `random-emoji` | Shows a random emoji, changing every five seconds |
 
 An unknown name exits with the list of valid ones.
 
@@ -62,6 +63,21 @@ Two properties of the device shape how this works:
 
 Because the greeting never expires on its own, the program clears it on the way
 out.
+
+## Random emoji
+
+`BUSYBAR_PROGRAM=random-emoji` shows a random emoji, changing every five
+seconds.
+
+Emoji cannot be drawn as text: the bar's fonts are bitmap ASCII and the API
+rejects anything outside `^[\x20-\x7E]+$`. The firmware ships emoji as image
+sprites, though, so this program references those by `stock_path` and uploads
+nothing at all — no image encoding, no asset management, no bundled files.
+
+Unlike the greeting, this one does refresh on a schedule, since the point is
+that the picture changes. Its elements expire after twice the refresh interval,
+so a single failed draw leaves the previous emoji up rather than blanking the
+screen.
 
 ## Development
 

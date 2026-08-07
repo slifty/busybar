@@ -1,4 +1,5 @@
 import { helloWorld } from "./hello-world/index.ts";
+import { randomEmoji } from "./random-emoji/index.ts";
 import type { Program } from "../program.ts";
 
 // Every operating mode the tool knows how to run, keyed by the name you put in
@@ -6,6 +7,7 @@ import type { Program } from "../program.ts";
 // one entry here.
 const PROGRAMS = {
 	[helloWorld.name]: helloWorld,
+	[randomEmoji.name]: randomEmoji,
 } as const satisfies Record<string, Program>;
 
 const { name: DEFAULT_PROGRAM_NAME } = helloWorld;
