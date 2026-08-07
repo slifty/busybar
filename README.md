@@ -11,8 +11,36 @@ publishes an official TypeScript library,
 [`@busy-app/busy-lib`](https://www.npmjs.com/package/@busy-app/busy-lib), which
 is what this project intends to build on.
 
-> **Status:** scaffolding only. The tooling, CI, and dependency automation are
-> in place; nothing talks to a device yet.
+> **Status:** early. The tooling, CI, and dependency automation are in place,
+> and the tool draws its first thing on a real device.
+
+## Hello, World
+
+Running the project scrolls "Hello, World!" across the BUSY Bar's front display
+and leaves it there until you stop it with Ctrl-C:
+
+```bash
+npm run dev
+```
+
+It expects a BUSY Bar connected over USB. The device appears as a USB-Ethernet
+adapter at the fixed address `10.0.4.20` — printed on its back cover — and USB
+is treated as a trusted channel, so no token or password is involved. Wi-Fi and
+cloud access both need credentials and are not wired up.
+
+Two properties of the device shape how this works:
+
+- **The greeting is drawn once, not on a loop.** Elements normally carry a
+  timeout and expire, but a timeout of `0` means the element stays until it is
+  cleared. That matters here because redrawing an element restarts its scroll
+  animation, so a redraw loop would jerk the text back to the start on every
+  tick.
+- **A focus session outranks us.** Draws are priority-ranked, and an active
+  BUSY or CUSTOM session sits above the default. The greeting reports that it
+  was preempted rather than pretending it drew something.
+
+Because the greeting never expires on its own, the program clears it on the way
+out.
 
 ## Development
 

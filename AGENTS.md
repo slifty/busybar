@@ -18,8 +18,9 @@ Pomodoro timer, and a small app platform.
 
 For specific dependency versions, consult `package.json`.
 
-**Status:** the repository is scaffolding at this point. Tooling, CI, and
-dependency automation exist; no device integration has been written yet.
+**Status:** early. Tooling, CI, and dependency automation are in place, and the
+tool talks to a real device: `npm run dev` scrolls "Hello, World!" across the
+front display over USB.
 
 ## The BUSY Bar SDK
 
@@ -91,10 +92,48 @@ against `tsconfig.dev.json`.
 
 ```
 src/
-└── index.ts        # Entry point
+├── config.ts       # Device address, draw priority, greeting appearance
+├── display.ts      # Draw and clear calls against the front display
+└── index.ts        # Entry point: connects, draws, cleans up
 ```
 
 The structure will grow as the tool does. Update this section when it does.
+
+## Device Notes
+
+Facts about the hardware that are easy to rediscover the hard way. All verified
+against firmware reporting `api_semver` 25.0.0.
+
+- **The device's OpenAPI spec is the authority.** It is served by the bar
+  itself at `http://10.0.4.20/openapi.yaml`, with a Swagger UI at `/docs`, and
+  describes the exact firmware in front of you. Prefer it over the published
+  docs.
+- **Text is printable ASCII only.** A text element's content is validated
+  against `^[\x20-\x7E]+$` because the fonts are bitmap ASCII. Emoji and
+  accented characters cannot be drawn as text — they have to be images.
+- **`extra_large` is uppercase-only.** It renders lowercase input as capitals,
+  and is wide enough that short strings overflow the 72px front display, which
+  is what triggers scrolling.
+- **Draws are preempted by priority.** A draw is accepted when its priority is
+  at least that of the app currently on screen. Built-in apps sit at 10, an
+  active BUSY or CUSTOM focus session at 90, and the API default is 50. Losing
+  the race returns HTTP 409, so anything long-running has to expect it.
+- **Draws expire unless told not to.** Every element carries a `timeout` in
+  seconds, where `0` means "never expire", or a `display_until` timestamp.
+  Anything drawn with a real timeout has to be redrawn to persist.
+- **Redrawing restarts animations.** Reusing an element `id` replaces the
+  element rather than stacking a second one, but a scrolling text element
+  restarts its scroll from the beginning. Draw-once plus `timeout: 0` is the
+  way to keep a smooth scroll.
+- **Frame grabs are base64 BGR.** `/api/screen?display=0` returns a base64 body
+  that decodes to 72x16x3 bytes in BGR order, despite the spec advertising
+  `image/bmp`. The back display is 160x80.
+- **Errors are plain `Error`s.** `busy-lib` attaches `status`, `statusText`,
+  and `body` via `Object.assign` and exports no error class, so HTTP status has
+  to be read off an `unknown` by duck typing.
+- **A signal handler does not keep Node alive.** Registering `SIGINT` is not
+  scheduled work, so a program that draws once and waits needs a timer (or
+  similar ref'd handle) to hold the event loop open.
 
 ## Code Conventions
 
