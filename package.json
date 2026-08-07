@@ -1,0 +1,51 @@
+{
+	"name": "busybar",
+	"version": "0.0.0",
+	"description": "A tool for interfacing with a BUSY Bar",
+	"private": true,
+	"type": "module",
+	"main": "dist/index.js",
+	"scripts": {
+		"build": "npm run cleanup && npm run build:node",
+		"build:node": "tsc -p tsconfig.json",
+		"cleanup": "rimraf dist",
+		"dev": "node --watch src/index.ts",
+		"format": "npm run format:eslint && npm run format:prettier",
+		"format:eslint": "eslint ./src --fix || true",
+		"format:prettier": "prettier . --write",
+		"lint": "npm run lint:eslint && npm run lint:prettier && npm run lint:tsc",
+		"lint:eslint": "eslint ./src --max-warnings=0",
+		"lint:prettier": "prettier . --check",
+		"lint:tsc": "tsc --noEmit -p tsconfig.dev.json",
+		"start": "node dist/index.js"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/slifty/busybar.git"
+	},
+	"keywords": [
+		"busy",
+		"busy-bar",
+		"pomodoro",
+		"status"
+	],
+	"author": "Daniel Schultz",
+	"license": "AGPL-3.0",
+	"engines": {
+		"node": "24"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.39.5",
+		"@tsconfig/node24": "^24.0.4",
+		"@types/node": "^24.13.2",
+		"eslint": "^9.39.5",
+		"eslint-config-love": "^154.1.0",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-import-resolver-typescript": "^4.4.5",
+		"globals": "^17.9.0",
+		"prettier": "3.9.6",
+		"rimraf": "^6.1.3",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.66.0"
+	}
+}

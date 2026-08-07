@@ -1,0 +1,22 @@
+{
+	"extends": "@tsconfig/node24/tsconfig.json",
+	"compilerOptions": {
+		"outDir": "dist",
+		"rootDir": "src",
+		"declaration": true,
+		"resolveJsonModule": true,
+		"noUncheckedIndexedAccess": true,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+		// Node 24 strips types natively, so `npm run dev` can run `.ts` directly.
+		// These three options keep the source runnable by Node as-is while still
+		// letting `tsc` emit a plain `.js` build: imports are written with `.ts`
+		// extensions and rewritten to `.js` on emit.
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+		"erasableSyntaxOnly": true,
+		"types": ["node"]
+	},
+	"include": ["src"],
+	"exclude": ["**/*.test.ts", "**/src/test"]
+}
