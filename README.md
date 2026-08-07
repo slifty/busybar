@@ -69,8 +69,9 @@ them to `.js` when it emits to `dist/`.
 
 - ESM throughout (`"type": "module"`)
 - Named exports only — no default exports
-- Tabs for indentation, single quotes, enforced by
-  [`.editorconfig`](.editorconfig) and Prettier
+- Tabs for indentation, double quotes — Prettier runs on its defaults, taking
+  the tabs from [`.editorconfig`](.editorconfig). There is no Prettier config
+  file.
 - ESLint uses [`eslint-config-love`](https://github.com/mightyiam/eslint-config-love)
   as its base
 

@@ -135,9 +135,19 @@ directly via native type stripping (`npm run dev`). That imposes two rules:
 
 ### Formatting
 
-Tabs for indentation, single quotes. Prettier reads `.editorconfig` for the
-indentation settings, so `.prettierrc` only overrides `singleQuote`. Do not
-hand-format; run `npm run format`.
+Tabs for indentation, double quotes. Do not hand-format; run `npm run format`.
+
+There is no Prettier config file and no `prettier` key in `package.json`, so
+Prettier runs on its defaults. The one thing that shifts those defaults is
+`.editorconfig`, which Prettier reads automatically:
+
+- `indent_style = tab` is what produces tabs. Prettier on its own would use two
+  spaces.
+- `.editorconfig` does not set `quote_type`, so Prettier's default
+  `singleQuote: false` stands and strings are double-quoted.
+
+Adding a Prettier config to change this is a deliberate decision, not a
+cleanup — it would reformat every file in the repository.
 
 ## Version Constraints
 
