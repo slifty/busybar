@@ -92,10 +92,34 @@ against `tsconfig.dev.json`.
 
 ```
 src/
-├── config.ts       # Device address, draw priority, greeting appearance
-├── display.ts      # Draw and clear calls against the front display
-└── index.ts        # Entry point: connects, draws, cleans up
+├── config.ts       # Device address, draw priority, display geometry
+├── display.ts      # Shared display helpers (clear, preemption detection)
+├── index.ts        # Entry point: resolves the program, connects, hands off
+├── program.ts      # The Program contract
+├── runner.ts       # Runs a program until interrupted, then cleans up
+└── programs/
+    ├── index.ts        # Registry: name -> program
+    └── hello-world/
+        └── index.ts    # Scrolling greeting
 ```
+
+The tool runs one **program** at a time — an operating mode — chosen by the
+`BUSYBAR_PROGRAM` environment variable and defaulting to `hello-world`.
+
+Core code sits at the root of `src/`; each program gets its own folder under
+`src/programs/`. A program declares a `name`, a `description`, a `draw`
+function, and optionally a `refreshIntervalMs`. The runner owns everything
+common: the first draw, the refresh schedule, tolerating HTTP 409 preemption,
+holding the event loop open, and clearing the display on exit.
+
+Two things to keep in mind when adding one:
+
+- **`name` doubles as the device-side application name**, so it has to match
+  `^[a-zA-Z0-9._-]+$`. Elements are namespaced by it, which is what lets the
+  runner clear one program without disturbing anything else.
+- **Omit `refreshIntervalMs` unless the program needs it.** Redrawing restarts
+  animations, so a program whose output the device sustains on its own (a
+  scroll, an animation) should draw once with `timeout: 0` instead.
 
 The structure will grow as the tool does. Update this section when it does.
 

@@ -14,19 +14,40 @@ is what this project intends to build on.
 > **Status:** early. The tooling, CI, and dependency automation are in place,
 > and the tool draws its first thing on a real device.
 
-## Hello, World
+## Connecting
 
-Running the project scrolls "Hello, World!" across the BUSY Bar's front display
-and leaves it there until you stop it with Ctrl-C:
+Everything here expects a BUSY Bar connected over USB. The device appears as a
+USB-Ethernet adapter at the fixed address `10.0.4.20` — printed on its back
+cover — and USB is treated as a trusted channel, so no token or password is
+involved. Wi-Fi and cloud access both need credentials and are not wired up.
+
+## Programs
+
+The bar runs one **program** at a time — an operating mode, one thing the
+device is doing. Pick one with the `BUSYBAR_PROGRAM` environment variable:
 
 ```bash
-npm run dev
+npm run dev                              # runs the default
+BUSYBAR_PROGRAM=hello-world npm run dev
 ```
 
-It expects a BUSY Bar connected over USB. The device appears as a USB-Ethernet
-adapter at the fixed address `10.0.4.20` — printed on its back cover — and USB
-is treated as a trusted channel, so no token or password is involved. Wi-Fi and
-cloud access both need credentials and are not wired up.
+| Program       | What it does                                     |
+| ------------- | ------------------------------------------------ |
+| `hello-world` | Scrolls "Hello, World!" across the front display |
+
+An unknown name exits with the list of valid ones.
+
+Everything common to programs lives in the runner: connecting, drawing,
+refreshing on a schedule where a program asks for one, tolerating preemption,
+and clearing the display on the way out. A program supplies a name, a
+description, a `draw` function, and optionally a refresh interval. Adding one
+means adding a folder under `src/programs/` and a single entry in
+`src/programs/index.ts`.
+
+## Hello, World
+
+The default program scrolls "Hello, World!" across the front display and leaves
+it there until you stop it with Ctrl-C.
 
 Two properties of the device shape how this works:
 
