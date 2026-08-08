@@ -107,6 +107,20 @@ To automatically fix what can be fixed:
 npm run format
 ```
 
+To run the tests:
+
+```bash
+npm test              # once
+npm run test:watch    # re-running on change
+npm run test:coverage # once, with a coverage report in coverage/
+```
+
+Tests are [Vitest](https://vitest.dev). They live in a `__tests__/` directory
+beside the code they cover — `src/programs/random-emoji/__tests__/emoji.test.ts`
+covers `src/programs/random-emoji/emoji.ts` — and never loose next to the source
+file. Fixtures sit in that same `__tests__` folder, beside the suite that uses
+them; shared tooling — helpers and factories — goes in `src/test/`.
+
 To build the project:
 
 ```bash

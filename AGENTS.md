@@ -15,6 +15,7 @@ Pomodoro timer, and a small app platform.
 - ESM throughout — `package.json` sets `"type": "module"`
 - ESLint (flat config) with `eslint-config-love` as the base
 - Prettier for formatting
+- Vitest for tests
 
 For specific dependency versions, consult `package.json`.
 
@@ -64,6 +65,15 @@ npm run lint
 # Auto-fix formatting and fixable lint errors
 npm run format
 
+# Run the tests once
+npm test
+
+# Re-run tests on change
+npm run test:watch
+
+# Run the tests with a coverage report
+npm run test:coverage
+
 # Build to dist/
 npm run build
 
@@ -99,6 +109,7 @@ src/
 ├── runner.ts       # Runs a program until interrupted, then cleans up
 ├── constants/
 │   └── time.ts         # Universal constants, not device- or program-specific
+├── test/               # Test tooling: helpers, fixtures, factories
 └── programs/
     ├── index.ts        # Registry: name -> program
     ├── hello-world/
@@ -220,6 +231,66 @@ directly via native type stripping (`npm run dev`). That imposes two rules:
   namespaces with runtime output. Use `const` objects with `as const` and
   union types in place of enums.
 
+### Testing
+
+Vitest, configured in `vitest.config.ts`.
+
+**Tests never live outside a `__tests__` folder.** A test for
+`src/programs/random-emoji/emoji.ts` goes in
+`src/programs/random-emoji/__tests__/emoji.test.ts` — beside the code it covers,
+but in its own directory, never loose next to the source file.
+
+**Fixtures belong to the suite that uses them**, in a `fixtures/` directory
+inside that `__tests__` folder — `__tests__/fixtures/valid-schedule.ts`. One
+file per fixture, named for what it is rather than for the suite that reads it,
+so the import at the top of a test says what the data represents. Keeping them
+here means reading a test never sends you across the tree to find out what it
+is working with.
+
+**`src/test/` holds tooling — helpers and factories, not fixtures.** The
+distinction is reuse and shape: a factory builds a value to order and is worth
+sharing across suites, while a fixture is one fixed example that belongs to one
+suite. If it takes arguments and several suites want it, it goes in `src/test/`;
+if it is a literal that answers "what does a block look like here", it stays
+beside the test.
+
+Test files keep the `.test.ts` suffix. Vitest gives `__tests__` no special
+meaning of its own — unlike Jest, its matching is suffix-based — so the suffix
+is what makes a file run.
+
+The supporting configuration, which has to stay in step with the above:
+
+- `vitest.config.ts` matches `src/**/__tests__/**/*.test.ts`.
+- `tsconfig.json` excludes `**/*.test.ts`, `**/__tests__` and `src/test`, so
+  no test code reaches `dist/`. It is all still type-checked, by
+  `npm run lint:tsc` via `tsconfig.dev.json`, which includes it.
+- `eslint.config.mjs` relaxes explicit return types and magic numbers across
+  all three of those patterns, so fixtures and factories get the same treatment
+  as the suites using them.
+
+Import the helpers explicitly — `import { describe, expect, it } from "vitest"`.
+Globals are deliberately off, which keeps tests consistent with the named-export
+rule and means nothing is in scope that was not imported. Relative imports carry
+the `.ts` extension in tests exactly as they do in `src/`.
+
+### Coverage
+
+`npm run test:coverage`, via `@vitest/coverage-v8`. Output lands in `coverage/`,
+which is git-ignored.
+
+Two settings in `vitest.config.ts` are doing deliberate work, because Vitest 4's
+defaults are wrong for this repository:
+
+- **`coverage.include` is set to `src/**/*.ts`.** Left at its default of
+  `undefined`, coverage only counts files a test happened to import, so a module
+  with no tests at all would be missing from the report rather than showing as
+  0% — which flatters the number badly. Setting it explicitly makes untested
+  code visible as untested.
+- **`coverage.exclude` lists `src/test/**` and `src/**/__tests__/**`.** Vitest
+  4 ships an empty default exclude, so without this the helpers in `src/test/`
+  would be measured as if they were production code — and they are always fully
+  covered by definition, which would inflate the total.
+
 ### Formatting
 
 Tabs for indentation, double quotes. Do not hand-format; run `npm run format`.
@@ -258,12 +329,28 @@ one job apiece for:
 - `actionlint` — workflow file validity
 - `npm-install` — verifies `package-lock.json` is in sync with `package.json`
 - `eslint`, `prettier`, `tsc` — the three parts of `npm run lint`
+- `test` — runs `npm run test:coverage` and uploads the result to Codecov
 - `build` — verifies `npm run build` succeeds
 
-`.github/workflows/auto-merge.yml` enables auto-merge on Dependabot PRs once
-checks pass.
+The `test` job currently passes vacuously: `passWithNoTests` is set in
+`vitest.config.ts` because the framework landed before the first test. Drop that
+option once tests exist, so that a run matching nothing fails instead of going
+quietly green.
 
-Test jobs will be added when there are tests.
+**The Codecov upload is skipped for Dependabot.** The step carries
+`if: github.actor != 'dependabot[bot]'`, and that is not a preference so much as
+a requirement: GitHub runs Dependabot-triggered workflows without access to
+repository secrets, so `CODECOV_TOKEN` would be empty and the upload would fail.
+The tests themselves still run on those pull requests — only the upload is
+skipped. `fail_ci_if_error` is on, so a genuinely broken upload fails the job
+rather than passing silently; turn it off if Codecov outages become a nuisance.
+
+`.github/codecov.yml` sets both the project and patch statuses to
+`informational`, so Codecov reports a number without ever blocking a merge —
+appropriate while the suite is empty and every patch would otherwise fail a
+coverage gate. It also re-states the `src/test` and `src/**/__tests__`
+exclusions that `vitest.config.ts` already applies, so the two cannot drift into
+disagreeing about what counts as covered code.
 
 ## Maintaining This Document
 
