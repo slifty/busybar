@@ -38,12 +38,19 @@ BUSYBAR_PROGRAM=hello-world npm run dev
 
 An unknown name exits with the list of valid ones.
 
-Everything common to programs lives in the runner: connecting, drawing,
-refreshing on a schedule where a program asks for one, tolerating preemption,
-and clearing the display on the way out. A program supplies a name, a
-description, a `draw` function, and optionally a refresh interval. Adding one
-means adding a folder under `src/programs/` and a single entry in
-`src/programs/index.ts`.
+Everything common to programs lives in the runner: connecting, drawing, waiting
+until a program wants to draw again, tolerating preemption, and clearing the
+display on the way out. A program supplies a name, a description, and a `draw`
+function. Adding one means adding a folder under `src/programs/` and a single
+entry in `src/programs/index.ts`.
+
+Programs schedule themselves rather than being polled: `draw` returns the
+number of milliseconds until it wants to be called again, or nothing at all if
+the device can sustain what was drawn on its own. The interesting moments are
+rarely evenly spaced — a focus block changes colour at two known instants and
+is static in between — and redrawing is not free, since it restarts scroll
+animations. Asking to be woken at the exact moment something changes keeps the
+screen correct without redrawing to check.
 
 ## Hello, World
 
@@ -56,7 +63,7 @@ Two properties of the device shape how this works:
   timeout and expire, but a timeout of `0` means the element stays until it is
   cleared. That matters here because redrawing an element restarts its scroll
   animation, so a redraw loop would jerk the text back to the start on every
-  tick.
+  tick. Its draw asks for no follow-up.
 - **A focus session outranks us.** Draws are priority-ranked, and an active
   BUSY or CUSTOM session sits above the default. The greeting reports that it
   was preempted rather than pretending it drew something.
@@ -74,9 +81,9 @@ rejects anything outside `^[\x20-\x7E]+$`. The firmware ships emoji as image
 sprites, though, so this program references those by `stock_path` and uploads
 nothing at all — no image encoding, no asset management, no bundled files.
 
-Unlike the greeting, this one does refresh on a schedule, since the point is
-that the picture changes. Its elements expire after twice the refresh interval,
-so a single failed draw leaves the previous emoji up rather than blanking the
+Unlike the greeting, this one asks to be drawn again every five seconds, since
+the point is that the picture changes. Its elements expire after twice that, so
+a single failed draw leaves the previous emoji up rather than blanking the
 screen.
 
 ## Development

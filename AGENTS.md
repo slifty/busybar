@@ -105,7 +105,7 @@ src/
 ├── config.ts       # Device address, draw priority, display geometry
 ├── display.ts      # Shared display helpers (clear, preemption detection)
 ├── index.ts        # Entry point: resolves the program, connects, hands off
-├── program.ts      # The Program contract
+├── program.ts      # The Program contract, including how a draw schedules the next
 ├── runner.ts       # Runs a program until interrupted, then cleans up
 ├── constants/
 │   └── time.ts         # Universal constants, not device- or program-specific
@@ -127,19 +127,27 @@ The tool runs one **program** at a time — an operating mode — chosen by the
 `BUSYBAR_PROGRAM` environment variable and defaulting to `hello-world`.
 
 Core code sits at the root of `src/`; each program gets its own folder under
-`src/programs/`. A program declares a `name`, a `description`, a `draw`
-function, and optionally a `refreshIntervalMs`. The runner owns everything
-common: the first draw, the refresh schedule, tolerating HTTP 409 preemption,
-holding the event loop open, and clearing the display on exit.
+`src/programs/`. A program declares a `name`, a `description`, and a `draw`
+function. The runner owns everything common: the first draw, waiting for the
+next one, tolerating HTTP 409 preemption, holding the event loop open, retrying
+after a failure, and clearing the display on exit.
+
+**Programs schedule themselves.** `draw` returns a `DrawResult`, whose
+`nextDrawInMs` says how long the runner should wait before drawing again.
+Returning `{}` means "do not come back". There is no fixed poll interval,
+because the moments that matter are rarely evenly spaced and redrawing costs
+something (see below). A draw that _fails_ is retried on the runner's own short
+delay instead, since the program never got to say what it wanted.
 
 Two things to keep in mind when adding one:
 
 - **`name` doubles as the device-side application name**, so it has to match
   `^[a-zA-Z0-9._-]+$`. Elements are namespaced by it, which is what lets the
   runner clear one program without disturbing anything else.
-- **Omit `refreshIntervalMs` unless the program needs it.** Redrawing restarts
-  animations, so a program whose output the device sustains on its own (a
-  scroll, an animation) should draw once with `timeout: 0` instead.
+- **Ask for the next draw only when something will actually change.** Redrawing
+  restarts animations, so a program whose output the device sustains on its own
+  (a scroll, an animation, a countdown) should draw with `timeout: 0` and
+  return `{}` rather than waking up to redraw the same thing.
 
 The structure will grow as the tool does. Update this section when it does.
 

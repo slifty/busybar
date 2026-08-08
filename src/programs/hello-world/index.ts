@@ -3,7 +3,7 @@ import {
 	FRONT_DISPLAY_MIDDLE_Y,
 	FRONT_DISPLAY_WIDTH,
 } from "../../config.ts";
-import type { Program, ProgramContext } from "../../program.ts";
+import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 
 const ELEMENT_ID = "greeting";
 
@@ -23,15 +23,15 @@ const SCROLL_REPEAT_DELAY_MS = 2_000;
 // A timeout of 0 means "no timeout": the element stays up until it is cleared.
 //
 // That is not just a convenience. Redrawing an element restarts its scroll
-// animation from the beginning, so refreshing on a schedule would make the
-// greeting stutter back to the start on every tick. Hence no
-// `refreshIntervalMs` below either.
+// animation from the beginning, so drawing again on any schedule would make
+// the greeting stutter back to the start. Hence the empty draw result below:
+// the device is left to sustain the scroll by itself.
 const NO_TIMEOUT = 0;
 
 const draw = async ({
 	bar,
 	applicationName,
-}: ProgramContext): Promise<void> => {
+}: ProgramContext): Promise<DrawResult> => {
 	await bar.DisplayDraw({
 		application_name: applicationName,
 		priority: DRAW_PRIORITY,
@@ -54,6 +54,8 @@ const draw = async ({
 			},
 		],
 	});
+
+	return {};
 };
 
 const helloWorld: Program = {
