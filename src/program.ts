@@ -35,6 +35,14 @@ interface Program {
 	// match ^[a-zA-Z0-9._-]+$.
 	readonly name: string;
 	readonly description: string;
+	// One-time preparation before the first draw: reading configuration,
+	// fetching a schedule, whatever the program cannot work without.
+	//
+	// Failing here is fatal, unlike failing a draw. A draw fails for reasons
+	// that pass -- a focus session owns the screen, a request times out -- so
+	// the runner retries. Preparation fails because the program cannot do its
+	// job at all, and retrying that forever only buries the reason.
+	readonly start?: (context: ProgramContext) => Promise<void>;
 	readonly draw: (context: ProgramContext) => Promise<DrawResult>;
 }
 

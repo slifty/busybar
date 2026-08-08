@@ -17,6 +17,30 @@ const KEEP_ALIVE_INTERVAL_MS = 60_000;
 // screen back shortly after that session ends, rather than staying dark.
 const RETRY_DELAY_MS = 5_000;
 
+// `setTimeout` keeps its delay in a signed 32-bit millisecond count, and
+// anything larger wraps round and fires immediately instead. A program working
+// from a schedule can easily ask for longer than the twenty-five days that
+// leaves -- the next focus block might be next month -- so a long wait is
+// taken in hops, redrawing and asking again on each one.
+const MAX_DELAY_MS = 2_147_483_647;
+
+// A delay of zero is a program asking to be drawn again immediately, which is
+// allowed; a negative one is not a request at all.
+const MIN_DELAY_MS = 0;
+
+// What the runner will actually wait, given what a program asked for.
+//
+// The delay is the one number a program hands back, so it is the one place a
+// program's arithmetic can reach the runner. `setTimeout` reads NaN and
+// Infinity as zero and a negative delay as zero, so a program that subtracts
+// two dates the wrong way round would be redrawn as fast as the event loop
+// allows rather than failing visibly. A value that is not a finite number of
+// milliseconds is treated as a mistake and retried on the runner's own delay.
+const delayFor = (requested: number): number =>
+	Number.isFinite(requested)
+		? Math.min(Math.max(requested, MIN_DELAY_MS), MAX_DELAY_MS)
+		: RETRY_DELAY_MS;
+
 const describe = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
@@ -54,6 +78,15 @@ const runProgram = async (
 	log: (message: string) => void,
 ): Promise<void> => {
 	const context = { bar, applicationName: program.name };
+
+	// Before anything is scheduled or drawn, so that a program which cannot
+	// prepare stops the tool with its reason instead of being retried. Nothing
+	// is running to stop until this has come back, which is why the program
+	// only invites Ctrl-C afterwards.
+	await program.start?.(context);
+
+	log("press Ctrl-C to stop");
+
 	const controller = new AbortController();
 
 	// Losing the screen to a focus session is expected and can persist for the
@@ -99,9 +132,13 @@ const runProgram = async (
 			return;
 		}
 
+		if (!Number.isFinite(delayMs)) {
+			log(`ignoring an impossible next-draw delay of ${String(delayMs)}`);
+		}
+
 		nextDraw = setTimeout(() => {
 			void drawAndSchedule();
-		}, delayMs);
+		}, delayFor(delayMs));
 	};
 
 	const keepAlive = setInterval(() => {
@@ -125,4 +162,4 @@ const runProgram = async (
 	}
 };
 
-export { runProgram };
+export { delayFor, runProgram };

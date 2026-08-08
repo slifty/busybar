@@ -109,9 +109,14 @@ src/
 ├── runner.ts       # Runs a program until interrupted, then cleans up
 ├── constants/
 │   └── time.ts         # Universal constants, not device- or program-specific
-├── test/               # Test tooling: helpers, fixtures, factories
+├── test/               # Test tooling: helpers and factories
 └── programs/
     ├── index.ts        # Registry: name -> program
+    ├── focus/
+    │   ├── blocks.ts   # Reads and validates the JSON schedule
+    │   ├── focus.ts    # A focus block, its phases, and their colours
+    │   ├── index.ts    # Draws the active block and schedules the next draw
+    │   └── schedule.ts # Overlap resolution and block lookup
     ├── hello-world/
     │   └── index.ts    # Scrolling greeting
     └── random-emoji/
@@ -122,6 +127,10 @@ src/
 `src/constants/` is for genuinely universal values (unit conversions and the
 like). Device facts belong in `src/config.ts`; anything only one program cares
 about belongs in that program's folder.
+
+`local/` is git-ignored wholesale and holds anything personal to one machine —
+`focus.json` today, and credentials or caches when a program needs them. Put
+runtime state there rather than adding a `.gitignore` entry per file.
 
 The tool runs one **program** at a time — an operating mode — chosen by the
 `BUSYBAR_PROGRAM` environment variable and defaulting to `hello-world`.
@@ -138,6 +147,13 @@ Returning `{}` means "do not come back". There is no fixed poll interval,
 because the moments that matter are rarely evenly spaced and redrawing costs
 something (see below). A draw that _fails_ is retried on the runner's own short
 delay instead, since the program never got to say what it wanted.
+
+**Preparation that can fail belongs in `start`.** A program may declare an
+optional `start`, run once before the first draw. Failing there is fatal and
+exits the tool with the reason, unlike a failed draw, which is retried — the
+distinction being that a draw fails for reasons that pass (a focus session owns
+the screen) whereas preparation fails because the program cannot work at all (a
+missing schedule file). `focus` uses it to read and validate its blocks.
 
 Two things to keep in mind when adding one:
 
@@ -188,6 +204,22 @@ against firmware reporting `api_semver` 25.0.0.
 - **Draws expire unless told not to.** Every element carries a `timeout` in
   seconds, where `0` means "never expire", or a `display_until` timestamp.
   Anything drawn with a real timeout has to be redrawn to persist.
+- **`display_until` is the better expiry when the end time is known.** It takes
+  a seconds-based Unix timestamp as a string and is mutually exclusive with
+  `timeout`. Verified: elements vanish on their own at that instant and the
+  built-in clock reclaims the screen, so a process that dies mid-way cannot
+  leave a finished thing on display.
+- **`countdown` is an element type, and the device ticks it.** It takes
+  `timestamp` (seconds-based Unix, as a string), `direction` (`time_left` or
+  `time_since`), and `show_hours`. Verified: it counts down with no redraws at
+  all, clamps at `00:00` rather than going negative, and widens to `H:MM:SS`
+  past an hour, which still fits 72px. There is no `font` option — the face is
+  fixed, and about ten pixels tall.
+- **`tiny` fits 18 characters across the front display.** Its widest glyph is
+  four pixels, so 18 of them exactly fill 72px. It pairs with a countdown
+  underneath inside the 16px height. Text wider than the display is clipped at
+  both ends unless the element is given a `width`, which makes it scroll
+  instead.
 - **Redrawing restarts animations.** Reusing an element `id` replaces the
   element rather than stacking a second one, but a scrolling text element
   restarts its scroll from the beginning. Draw-once plus `timeout: 0` is the
@@ -281,6 +313,36 @@ Globals are deliberately off, which keeps tests consistent with the named-export
 rule and means nothing is in scope that was not imported. Relative imports carry
 the `.ts` extension in tests exactly as they do in `src/`.
 
+#### How the existing suites do it
+
+`src/programs/focus/__tests__/` is the worked example. Four conventions there
+are worth copying rather than reinventing:
+
+- **`describe` names the thing under test, `it` finishes a sentence about it.**
+  `describe("phaseAt")` with `it("is 14 minutes in -> rampUp")`. Nested
+  `describe`s set up a case once — "a block shorter than both bands combined" —
+  so the individual assertions stay short.
+- **Fake the device, never the network.** `src/test/bar.ts` provides
+  `createFakeBar()`, which records what it was asked to draw and hands back
+  something cast to `BusyBar`. Only the methods a program actually calls exist,
+  so reaching for anything else fails loudly instead of quietly doing nothing.
+  Assert against the recorded elements rather than against HTTP.
+- **Fake the clock, not the event loop.** Anything reading `new Date()` gets
+  `vi.useFakeTimers({ toFake: ["Date"] })` and `vi.setSystemTime(...)`. Faking
+  timers wholesale would stall the real file reads these suites await.
+- **Prefer a real temporary file to a mocked `fs`.** `blocks.test.ts` writes
+  schedules into a `mkdtemp` directory and points `BUSYBAR_FOCUS_FILE` at them
+  with `vi.stubEnv`. Reading and validating a file is the entire job of that
+  module, so mocking the filesystem would leave the part worth testing
+  untested — and it lets the suite pin down the exact error message a mistyped
+  schedule produces.
+
+Test the behaviour a caller depends on, not the shape of the implementation.
+The suites assert that a short block never reads as settled, that
+`nextPhaseChangeAt` always points strictly forwards, and that no two blocks
+returned by `withoutOverlaps` overlap — properties that stay true through a
+rewrite, and that catch far more than a line-by-line transcription would.
+
 ### Coverage
 
 `npm run test:coverage`, via `@vitest/coverage-v8`. Output lands in `coverage/`,
@@ -339,11 +401,6 @@ one job apiece for:
 - `eslint`, `prettier`, `tsc` — the three parts of `npm run lint`
 - `test` — runs `npm run test:coverage` and uploads the result to Codecov
 - `build` — verifies `npm run build` succeeds
-
-The `test` job currently passes vacuously: `passWithNoTests` is set in
-`vitest.config.ts` because the framework landed before the first test. Drop that
-option once tests exist, so that a run matching nothing fails instead of going
-quietly green.
 
 **The Codecov upload is skipped for Dependabot.** The step carries
 `if: github.actor != 'dependabot[bot]'`, and that is not a preference so much as

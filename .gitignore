@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 
 # Coverage output
 coverage/
+
+# Anything personal to one machine: focus schedules, credentials, caches
+local/
