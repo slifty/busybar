@@ -49,6 +49,7 @@
 		"typescript-eslint": "^8.66.0"
 	},
 	"dependencies": {
-		"@busy-app/busy-lib": "^0.18.0"
+		"@busy-app/busy-lib": "^0.18.0",
+		"@pdc/http-status-codes": "^1.0.1"
 	}
 }
