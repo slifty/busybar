@@ -18,8 +18,9 @@ Pomodoro timer, and a small app platform.
 
 For specific dependency versions, consult `package.json`.
 
-**Status:** the repository is scaffolding at this point. Tooling, CI, and
-dependency automation exist; no device integration has been written yet.
+**Status:** early. Tooling, CI, and dependency automation are in place, and the
+tool talks to a real device: `npm run dev` scrolls "Hello, World!" across the
+front display over USB.
 
 ## The BUSY Bar SDK
 
@@ -91,10 +92,96 @@ against `tsconfig.dev.json`.
 
 ```
 src/
-└── index.ts        # Entry point
+├── config.ts       # Device address, draw priority, display geometry
+├── display.ts      # Shared display helpers (clear, preemption detection)
+├── index.ts        # Entry point: resolves the program, connects, hands off
+├── program.ts      # The Program contract
+├── runner.ts       # Runs a program until interrupted, then cleans up
+├── constants/
+│   └── time.ts         # Universal constants, not device- or program-specific
+└── programs/
+    ├── index.ts        # Registry: name -> program
+    ├── hello-world/
+    │   └── index.ts    # Scrolling greeting
+    └── random-emoji/
+        ├── emoji.ts    # The firmware's built-in emoji sprites
+        └── index.ts    # Picks one at random on a schedule
 ```
 
+`src/constants/` is for genuinely universal values (unit conversions and the
+like). Device facts belong in `src/config.ts`; anything only one program cares
+about belongs in that program's folder.
+
+The tool runs one **program** at a time — an operating mode — chosen by the
+`BUSYBAR_PROGRAM` environment variable and defaulting to `hello-world`.
+
+Core code sits at the root of `src/`; each program gets its own folder under
+`src/programs/`. A program declares a `name`, a `description`, a `draw`
+function, and optionally a `refreshIntervalMs`. The runner owns everything
+common: the first draw, the refresh schedule, tolerating HTTP 409 preemption,
+holding the event loop open, and clearing the display on exit.
+
+Two things to keep in mind when adding one:
+
+- **`name` doubles as the device-side application name**, so it has to match
+  `^[a-zA-Z0-9._-]+$`. Elements are namespaced by it, which is what lets the
+  runner clear one program without disturbing anything else.
+- **Omit `refreshIntervalMs` unless the program needs it.** Redrawing restarts
+  animations, so a program whose output the device sustains on its own (a
+  scroll, an animation) should draw once with `timeout: 0` instead.
+
 The structure will grow as the tool does. Update this section when it does.
+
+## Device Notes
+
+Facts about the hardware that are easy to rediscover the hard way. All verified
+against firmware reporting `api_semver` 25.0.0.
+
+- **The device's OpenAPI spec is the authority.** It is served by the bar
+  itself at `http://10.0.4.20/openapi.yaml`, with a Swagger UI at `/docs`, and
+  describes the exact firmware in front of you. Prefer it over the published
+  docs.
+- **Text is printable ASCII only.** A text element's content is validated
+  against `^[\x20-\x7E]+$` because the fonts are bitmap ASCII. Emoji and
+  accented characters cannot be drawn as text — they have to be images.
+- **`extra_large` is uppercase-only.** It renders lowercase input as capitals,
+  and is wide enough that short strings overflow the 72px front display, which
+  is what triggers scrolling.
+- **Draws are preempted by priority.** Built-in apps sit at 10, an active BUSY
+  or CUSTOM focus session at 90, and the API default is 50. Losing the race
+  returns HTTP 409, so anything long-running has to expect it.
+- **Equal priority does not win, despite the docs.** The spec says a draw is
+  accepted when its priority is `>=` the current app's, and that equal-priority
+  requests from a different `application_name` override what is on screen.
+  Measured behaviour is stricter: while one application holds the screen at
+  priority 50, another application drawing at 50 gets 409, and only 51 or
+  higher succeeds. The practical consequence is that a program which exits
+  without clearing — especially one holding a `timeout: 0` element, which never
+  expires — locks every other program out of the display until something clears
+  it. `DELETE /api/display/draw` with no `application_name` clears everything.
+- **The firmware ships sprites.** `/ext/apps_assets/shared/images` holds emoji,
+  food, hearts, and status icons. Reference them from an image element with
+  `stock_path: "shared/<file>.image"`, which skips asset upload entirely.
+  `/api/storage/list?path=/ext/apps_assets/shared/images` enumerates them.
+- **`opacity` is required by the generated types.** `openapi-typescript` turns
+  documented defaults into required properties, so image elements must pass it
+  explicitly even though the device would default it.
+- **Draws expire unless told not to.** Every element carries a `timeout` in
+  seconds, where `0` means "never expire", or a `display_until` timestamp.
+  Anything drawn with a real timeout has to be redrawn to persist.
+- **Redrawing restarts animations.** Reusing an element `id` replaces the
+  element rather than stacking a second one, but a scrolling text element
+  restarts its scroll from the beginning. Draw-once plus `timeout: 0` is the
+  way to keep a smooth scroll.
+- **Frame grabs are base64 BGR.** `/api/screen?display=0` returns a base64 body
+  that decodes to 72x16x3 bytes in BGR order, despite the spec advertising
+  `image/bmp`. The back display is 160x80.
+- **Errors are plain `Error`s.** `busy-lib` attaches `status`, `statusText`,
+  and `body` via `Object.assign` and exports no error class, so HTTP status has
+  to be read off an `unknown` by duck typing.
+- **A signal handler does not keep Node alive.** Registering `SIGINT` is not
+  scheduled work, so a program that draws once and waits needs a timer (or
+  similar ref'd handle) to hold the event loop open.
 
 ## Code Conventions
 
@@ -135,9 +222,19 @@ directly via native type stripping (`npm run dev`). That imposes two rules:
 
 ### Formatting
 
-Tabs for indentation, single quotes. Prettier reads `.editorconfig` for the
-indentation settings, so `.prettierrc` only overrides `singleQuote`. Do not
-hand-format; run `npm run format`.
+Tabs for indentation, double quotes. Do not hand-format; run `npm run format`.
+
+There is no Prettier config file and no `prettier` key in `package.json`, so
+Prettier runs on its defaults. The one thing that shifts those defaults is
+`.editorconfig`, which Prettier reads automatically:
+
+- `indent_style = tab` is what produces tabs. Prettier on its own would use two
+  spaces.
+- `.editorconfig` does not set `quote_type`, so Prettier's default
+  `singleQuote: false` stands and strings are double-quoted.
+
+Adding a Prettier config to change this is a deliberate decision, not a
+cleanup — it would reformat every file in the repository.
 
 ## Version Constraints
 

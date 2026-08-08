@@ -11,8 +11,73 @@ publishes an official TypeScript library,
 [`@busy-app/busy-lib`](https://www.npmjs.com/package/@busy-app/busy-lib), which
 is what this project intends to build on.
 
-> **Status:** scaffolding only. The tooling, CI, and dependency automation are
-> in place; nothing talks to a device yet.
+> **Status:** early. The tooling, CI, and dependency automation are in place,
+> and the tool draws its first thing on a real device.
+
+## Connecting
+
+Everything here expects a BUSY Bar connected over USB. The device appears as a
+USB-Ethernet adapter at the fixed address `10.0.4.20` — printed on its back
+cover — and USB is treated as a trusted channel, so no token or password is
+involved. Wi-Fi and cloud access both need credentials and are not wired up.
+
+## Programs
+
+The bar runs one **program** at a time — an operating mode, one thing the
+device is doing. Pick one with the `BUSYBAR_PROGRAM` environment variable:
+
+```bash
+npm run dev                              # runs the default
+BUSYBAR_PROGRAM=hello-world npm run dev
+```
+
+| Program        | What it does                                      |
+| -------------- | ------------------------------------------------- |
+| `hello-world`  | Scrolls "Hello, World!" across the front display  |
+| `random-emoji` | Shows a random emoji, changing every five seconds |
+
+An unknown name exits with the list of valid ones.
+
+Everything common to programs lives in the runner: connecting, drawing,
+refreshing on a schedule where a program asks for one, tolerating preemption,
+and clearing the display on the way out. A program supplies a name, a
+description, a `draw` function, and optionally a refresh interval. Adding one
+means adding a folder under `src/programs/` and a single entry in
+`src/programs/index.ts`.
+
+## Hello, World
+
+The default program scrolls "Hello, World!" across the front display and leaves
+it there until you stop it with Ctrl-C.
+
+Two properties of the device shape how this works:
+
+- **The greeting is drawn once, not on a loop.** Elements normally carry a
+  timeout and expire, but a timeout of `0` means the element stays until it is
+  cleared. That matters here because redrawing an element restarts its scroll
+  animation, so a redraw loop would jerk the text back to the start on every
+  tick.
+- **A focus session outranks us.** Draws are priority-ranked, and an active
+  BUSY or CUSTOM session sits above the default. The greeting reports that it
+  was preempted rather than pretending it drew something.
+
+Because the greeting never expires on its own, the program clears it on the way
+out.
+
+## Random emoji
+
+`BUSYBAR_PROGRAM=random-emoji` shows a random emoji, changing every five
+seconds.
+
+Emoji cannot be drawn as text: the bar's fonts are bitmap ASCII and the API
+rejects anything outside `^[\x20-\x7E]+$`. The firmware ships emoji as image
+sprites, though, so this program references those by `stock_path` and uploads
+nothing at all — no image encoding, no asset management, no bundled files.
+
+Unlike the greeting, this one does refresh on a schedule, since the point is
+that the picture changes. Its elements expire after twice the refresh interval,
+so a single failed draw leaves the previous emoji up rather than blanking the
+screen.
 
 ## Development
 
@@ -69,8 +134,9 @@ them to `.js` when it emits to `dist/`.
 
 - ESM throughout (`"type": "module"`)
 - Named exports only — no default exports
-- Tabs for indentation, single quotes, enforced by
-  [`.editorconfig`](.editorconfig) and Prettier
+- Tabs for indentation, double quotes — Prettier runs on its defaults, taking
+  the tabs from [`.editorconfig`](.editorconfig). There is no Prettier config
+  file.
 - ESLint uses [`eslint-config-love`](https://github.com/mightyiam/eslint-config-love)
   as its base
 
