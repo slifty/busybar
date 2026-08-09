@@ -161,6 +161,31 @@ exactly those moments rather than polling to find them. That is not only
 tidiness — a block name too long for 72px scrolls, and redrawing restarts the
 scroll, so polling would jerk the name back to the start on every tick.
 
+## Configuration
+
+Everything configurable is read from the environment. Node loads a `.env` file
+natively, so there is no `dotenv` dependency:
+
+```bash
+cp .env.example .env
+```
+
+[`.env.example`](.env.example) lists every variable and its default, in a block
+per program — add a block there whenever a program gains a setting, so there is
+one place to discover what can be set. `.env` itself is git-ignored.
+
+Running without a `.env` is fine. Every setting has a default, and the scripts
+use `--env-file-if-exists`, which carries on when the file is absent rather
+than failing the way plain `--env-file` does. It does print a one-line notice
+to stderr saying so.
+
+A variable set in the environment beats the same variable in `.env`, so a
+one-off run needs no edit:
+
+```bash
+BUSYBAR_PROGRAM=focus npm run dev
+```
+
 ## Development
 
 ### Requirements

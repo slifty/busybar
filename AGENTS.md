@@ -98,6 +98,30 @@ npm run lint
 (including import ordering). `npm run lint` additionally runs `tsc --noEmit`
 against `tsconfig.dev.json`.
 
+## Configuration
+
+Configuration is environment variables, loaded from `.env` by Node itself —
+`npm run dev` and `npm start` pass `--env-file-if-exists=.env`. There is no
+`dotenv` dependency and there should not be one.
+
+- **`--env-file-if-exists`, not `--env-file`.** The latter exits non-zero when
+  the file is missing, which would make a `.env` mandatory. Every setting has a
+  default, so it must not be.
+- **A variable already in the environment wins over `.env`.** That is what
+  makes `BUSYBAR_PROGRAM=focus npm run dev` work without editing anything.
+- **Tests never see `.env`.** Vitest does not load it into `process.env`, so a
+  developer's local settings cannot change what the suite does. Tests that care
+  about a variable set it themselves with `vi.stubEnv`.
+- **Every variable is prefixed `BUSYBAR_`**, and anything belonging to one
+  program carries that program's name too — `BUSYBAR_FOCUS_FILE`. Core settings
+  are read in `src/config.ts`; a program's own settings are read inside that
+  program's folder, never centrally.
+
+`.env.example` is committed and is the catalogue: one block per program, every
+variable with its default. `.gitignore` ignores `.env` and `.env.*` but
+re-includes `.env.example`. Adding a setting without adding it there leaves it
+undiscoverable, so treat the two as one change.
+
 ## Project Structure
 
 ```
