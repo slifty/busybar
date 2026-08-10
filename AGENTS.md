@@ -163,7 +163,18 @@ Core code sits at the root of `src/`; each program gets its own folder under
 `src/programs/`. A program declares a `name`, a `description`, and a `draw`
 function. The runner owns everything common: the first draw, waiting for the
 next one, tolerating HTTP 409 preemption, holding the event loop open, retrying
-after a failure, and clearing the display on exit.
+after a failure, putting failures on the display, and clearing it on exit.
+
+**Failure is drawn, not just logged.** The bar falls back to its clock whenever
+nothing is drawn over it, so a broken program and an idle one look the same.
+The runner draws a red `<program>: ERROR` on any draw failure that is not
+preemption, and on a fatal `start`. Three constraints on that, all from how the
+device arbitrates the screen: it goes under the program's own application name
+(the device gives a priority tie to the incumbent application, so an error
+under any other name is one the program can never draw over); it clears the
+program's elements first rather than overlaying them; and it is taken down
+before each retry rather than after a success, or it would block the recovery
+that clears it. See `showError` in `src/display.ts`.
 
 **Programs schedule themselves.** `draw` returns a `DrawResult`, whose
 `nextDrawInMs` says how long the runner should wait before drawing again.

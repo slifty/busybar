@@ -40,10 +40,54 @@ BUSYBAR_PROGRAM=hello-world npm run dev
 An unknown name exits with the list of valid ones.
 
 Everything common to programs lives in the runner: connecting, drawing, waiting
-until a program wants to draw again, tolerating preemption, and clearing the
-display on the way out. A program supplies a name, a description, and a `draw`
-function. Adding one means adding a folder under `src/programs/` and a single
-entry in `src/programs/index.ts`.
+until a program wants to draw again, tolerating preemption, putting failures on
+the display, and clearing it on the way out. A program supplies a name, a
+description, and a `draw` function. Adding one means adding a folder under
+`src/programs/` and a single entry in `src/programs/index.ts`.
+
+### When something goes wrong
+
+A failure goes on the bar, in red, as well as into the log:
+
+```
+focus: ERROR
+```
+
+The reason it is there at all is that failure is otherwise invisible. The bar
+falls back to its built-in clock whenever nothing is drawn over it, so a
+program between focus blocks, a program retrying a draw it will never land, and
+a program that died half an hour ago all look identical from across the room —
+and only the first of those is fine. Anything that leaves you believing the bar
+will do something it will not is the thing worth preventing.
+
+It names the program rather than the problem. There is no version of an HTTP
+error or a parse failure that reads well on 72×16 pixels, and none of it is
+actionable from across the room; the terminal has the reason in full. What the
+bar is for is telling you to go and look.
+
+Three details follow from how the device arbitrates the screen:
+
+- **A failure replaces what the program had drawn**, rather than appearing
+  alongside it. Two text elements on 72×16 leaves both unreadable. This means a
+  single failed draw takes down a drawing that may still have been correct,
+  which is the intended direction — a bar showing the last thing that worked is
+  exactly the impression being avoided.
+- **It is drawn under the program's own application name.** Draws are ranked by
+  priority, and the device settles a tie in favour of whichever application
+  already holds the screen. An error kept under a name of its own would be one
+  the program could never draw over, so the report of the failure would become
+  the thing preventing the recovery.
+- **It comes down before each retry, not after one succeeds**, for the same
+  reason.
+
+A failure during startup is left on screen deliberately. The process exits, so
+nothing is coming to clear it, and a tool that never started is precisely when
+the display must not look ordinary. The next run clears it before its first
+draw, so a leftover error never sits underneath what that run draws.
+
+Preemption is not a failure. An active BUSY or CUSTOM session outranking this
+tool is the device working as intended, so it is reported to the log and left
+off the display — where it could not be drawn anyway.
 
 Programs schedule themselves rather than being polled: `draw` returns the
 number of milliseconds until it wants to be called again, or nothing at all if
