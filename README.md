@@ -139,9 +139,39 @@ outside printable ASCII — em dashes, curly quotes, emoji — is dropped from a
 name before it is drawn. A name left with nothing drawable at all is an error
 rather than a blank row.
 
-A schedule that is missing or malformed stops the tool with the reason. The
-alternative is a bar that sits dark all day while the explanation scrolls past
-in a log.
+A schedule that is missing or malformed at startup stops the tool with the
+reason. The alternative is a bar that sits dark all day while the explanation
+scrolls past in a log. Once running, the same problem is only a failed draw,
+retried on the runner's short delay — the file belongs to whatever is writing
+it, so finding it mid-write is a moment to wait out rather than to exit on.
+
+### Keeping up with a file that changes
+
+Blocks are timestamps, not times of day, so a schedule is only ever about the
+days it actually names. That makes the file something to keep current rather
+than something to write once, and the program is built to be read from while
+someone else is writing to it.
+
+The schedule is read on every draw, not held from startup. A process left
+running overnight therefore picks up a new day's blocks on its own, and a block
+added, moved, or cancelled during the day takes effect at the next draw without
+a restart.
+
+Between blocks, the program will not go more than fifteen minutes without
+looking at the file again, even when the next block it can see is hours off —
+otherwise a block added ahead of that one would be missed, and a schedule that
+had run out would never be looked at again. Nothing is on screen at those
+moments, so the wake-up costs a file read and no device traffic.
+
+That cap deliberately does not apply while a block is showing. Cutting a
+block's wait short would redraw it, and redrawing restarts the scroll on its
+name, so a change to a block already on screen is picked up at its next colour
+change rather than immediately.
+
+An exhausted schedule is treated as one that has not been filled in yet, since
+that is what it usually is. The program keeps checking rather than stopping,
+which is what lets a sync that has not run yet, or a file written later in the
+day, still reach the bar.
 
 ### What the device does for itself
 

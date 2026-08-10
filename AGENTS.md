@@ -177,7 +177,9 @@ optional `start`, run once before the first draw. Failing there is fatal and
 exits the tool with the reason, unlike a failed draw, which is retried — the
 distinction being that a draw fails for reasons that pass (a focus session owns
 the screen) whereas preparation fails because the program cannot work at all (a
-missing schedule file). `focus` uses it to read and validate its blocks.
+missing schedule file). `focus` uses it to validate its schedule, which it then
+re-reads on every draw rather than holding from startup — a file someone else
+writes has to be read when it is needed, not once.
 
 Two things to keep in mind when adding one:
 

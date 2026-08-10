@@ -4,16 +4,29 @@ import {
 	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_WIDTH,
 } from "../../config.ts";
-import { MS_PER_SECOND } from "../../constants/time.ts";
+import { MS_PER_MINUTE, MS_PER_SECOND } from "../../constants/time.ts";
 import { loadBlocks } from "./blocks.ts";
 import { colorFor, nextPhaseChangeAt, phaseAt } from "./focus.ts";
 import { createSchedule } from "./schedule.ts";
 import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 import type { Focus } from "./focus.ts";
-import type { Schedule } from "./schedule.ts";
 
 const NAME_ELEMENT_ID = "focus-name";
 const COUNTDOWN_ELEMENT_ID = "focus-countdown";
+
+// How long the program will go without looking at the schedule again while it
+// has nothing on screen.
+//
+// The schedule is written by something else and changes on its own, so waiting
+// only for the next block we can currently see would miss one added ahead of
+// it -- and, on a schedule that has run out, would mean never looking again at
+// all. This is a floor on curiosity, not a poll: it applies only between
+// blocks, where a wake-up costs a file read and nothing else.
+//
+// It deliberately does not apply while a block is on screen. Cutting that wait
+// short would redraw the block, and redrawing restarts the scroll on its name.
+const IDLE_REFRESH_MINUTES = 15;
+const IDLE_REFRESH_MS = IDLE_REFRESH_MINUTES * MS_PER_MINUTE;
 
 // The name takes the top row in the smallest font, leaving the rest of the
 // 16px height to the countdown, which is drawn in a fixed face about ten
@@ -36,17 +49,6 @@ const SCROLL_REPEAT_DELAY_MS = 2_000;
 // millisecond regardless, and the next block's draw replaces these elements.
 const unixSeconds = (date: Date): string =>
 	String(Math.ceil(date.getTime() / MS_PER_SECOND));
-
-// Resolved once by `start`, before any draw can ask for it.
-let schedule: Schedule | undefined = undefined;
-
-const resolvedSchedule = (): Schedule => {
-	if (schedule === undefined) {
-		throw new Error("the focus schedule was never loaded");
-	}
-
-	return schedule;
-};
 
 const drawFocus = async (
 	{ bar, applicationName }: ProgramContext,
@@ -104,13 +106,23 @@ const drawFocus = async (
 	};
 };
 
+// Reading the schedule here is a check, not a cache. `draw` reads it again
+// every time; what this buys is that a missing or malformed file stops the
+// tool now, with the reason, rather than being retried every few seconds
+// behind a bar that sits dark.
 const start = async (): Promise<void> => {
-	schedule = createSchedule(await loadBlocks());
+	await loadBlocks();
 };
 
 const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	const now = new Date();
-	const active = resolvedSchedule().activeAt(now);
+
+	// Read afresh on every draw rather than resolved once at startup. The file
+	// belongs to whatever is filling it in -- a calendar sync, an editor -- and
+	// a schedule read only at startup would have this process showing
+	// yesterday's blocks for as long as it stayed up.
+	const schedule = createSchedule(await loadBlocks());
+	const active = schedule.activeAt(now);
 
 	if (active !== undefined) {
 		return await drawFocus(context, active, now);
@@ -119,15 +131,15 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	// Between blocks there is nothing to draw and nothing to clear: the last
 	// block's elements were given its end as their expiry, so the device has
 	// already taken them down and handed the screen back.
-	const next = resolvedSchedule().nextAfter(now);
+	//
+	// An exhausted schedule is not a reason to stop. It much more often means
+	// the file has not been filled in yet than that the day is genuinely over,
+	// and a program that gave up here would stay given up until restarted.
+	const next = schedule.nextAfter(now);
+	const untilNextBlock =
+		next === undefined ? Infinity : next.start.getTime() - now.getTime();
 
-	// The schedule is spent. The runner holds the process open, so this is a
-	// quiet exit rather than a stopped one.
-	if (next === undefined) {
-		return {};
-	}
-
-	return { nextDrawInMs: next.start.getTime() - now.getTime() };
+	return { nextDrawInMs: Math.min(untilNextBlock, IDLE_REFRESH_MS) };
 };
 
 const focus: Program = {
@@ -137,4 +149,4 @@ const focus: Program = {
 	draw,
 };
 
-export { focus };
+export { IDLE_REFRESH_MS, focus };
