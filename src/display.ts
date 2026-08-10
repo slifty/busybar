@@ -1,10 +1,11 @@
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import {
 	DRAW_PRIORITY,
+	FRONT_DISPLAY_HEIGHT,
 	FRONT_DISPLAY_MIDDLE_X,
-	FRONT_DISPLAY_MIDDLE_Y,
 	FRONT_DISPLAY_WIDTH,
 } from "./config.ts";
+import { fitText } from "./text.ts";
 import type { BusyBar } from "@busy-app/busy-lib";
 
 // busy-lib rejects with a plain Error carrying `status` from the HTTP
@@ -37,7 +38,6 @@ const ERROR_ELEMENT_ID = "error";
 
 // The only red this tool draws, so red on the bar means exactly one thing.
 const ERROR_COLOR = "#FF0000FF";
-const ERROR_FONT = "small";
 
 // Naming the program rather than the problem is deliberate. There is no
 // version of an HTTP error or a parse failure that reads well on 72px of LED,
@@ -47,11 +47,13 @@ const ERROR_FONT = "small";
 // rejected for a character the bitmap fonts cannot draw.
 const errorText = (programName: string): string => `${programName}: ERROR`;
 
-// Long program names overflow 72px, so the text is given the room to scroll
-// rather than being clipped to something unreadable.
-const SCROLL_RATE_PX_PER_MINUTE = 600;
-const SCROLL_START_DELAY_MS = 1_000;
-const SCROLL_REPEAT_DELAY_MS = 2_000;
+// A long program name is sized down and broken across lines rather than set
+// scrolling. A failure is a thing to take in at a glance from across the room,
+// and scrolling text is a thing you have to stand and wait for.
+const ERROR_REGION = {
+	width: FRONT_DISPLAY_WIDTH,
+	height: FRONT_DISPLAY_HEIGHT,
+};
 
 // A timeout of 0 means the element stays until it is cleared.
 //
@@ -83,27 +85,25 @@ const showError = async (
 ): Promise<void> => {
 	await clearApplication(bar, applicationName);
 
+	const fitted = fitText(errorText(applicationName), ERROR_REGION);
+
+	// One element per line, and no need to account for lines a previous error
+	// had and this one does not: the clear above has already taken them down.
 	await bar.DisplayDraw({
 		application_name: applicationName,
 		priority: DRAW_PRIORITY,
-		elements: [
-			{
-				id: ERROR_ELEMENT_ID,
-				type: "text",
-				text: errorText(applicationName),
-				font: ERROR_FONT,
-				color: ERROR_COLOR,
-				display: "front",
-				align: "center",
-				x: FRONT_DISPLAY_MIDDLE_X,
-				y: FRONT_DISPLAY_MIDDLE_Y,
-				width: FRONT_DISPLAY_WIDTH,
-				scroll_rate: SCROLL_RATE_PX_PER_MINUTE,
-				scroll_start_delay: SCROLL_START_DELAY_MS,
-				scroll_repeat_delay: SCROLL_REPEAT_DELAY_MS,
-				timeout: NO_TIMEOUT,
-			},
-		],
+		elements: fitted.lines.map(({ text, y }, index) => ({
+			id: `${ERROR_ELEMENT_ID}-${String(index)}`,
+			type: "text" as const,
+			text,
+			font: fitted.font,
+			color: ERROR_COLOR,
+			display: "front" as const,
+			align: "top_mid" as const,
+			x: FRONT_DISPLAY_MIDDLE_X,
+			y,
+			timeout: NO_TIMEOUT,
+		})),
 	});
 };
 

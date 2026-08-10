@@ -128,16 +128,18 @@ undiscoverable, so treat the two as one change.
 src/
 ├── config.ts       # Device address, draw priority, display geometry
 ├── display.ts      # Shared display helpers (clear, preemption detection)
+├── fonts.ts        # Measured font and countdown metrics
 ├── index.ts        # Entry point: resolves the program, connects, hands off
 ├── program.ts      # The Program contract, including how a draw schedules the next
 ├── runner.ts       # Runs a program until interrupted, then cleans up
+├── text.ts         # Fits a string into a region: picks a font, wraps, places
 ├── constants/
 │   └── time.ts         # Universal constants, not device- or program-specific
 ├── test/               # Test tooling: helpers and factories
 └── programs/
     ├── index.ts        # Registry: name -> program
     ├── focus/
-    │   ├── blocks.ts   # Picks the source, reads it, validates JSON schedules
+    │   ├── blocks.ts   # Picks the source, reads it, mirrors a calendar to the file
     │   ├── calendar.ts # Turns an iCalendar feed into blocks
     │   ├── focus.ts    # A focus block, its phases, and their colours
     │   ├── index.ts    # Draws the active block and schedules the next draw
@@ -151,12 +153,30 @@ src/
 ```
 
 `src/constants/` is for genuinely universal values (unit conversions and the
-like). Device facts belong in `src/config.ts`; anything only one program cares
-about belongs in that program's folder.
+like). Device facts belong in `src/config.ts`, except the measured font and
+countdown metrics, which are bulky enough to have `src/fonts.ts` to themselves;
+anything only one program cares about belongs in that program's folder.
 
 `local/` is git-ignored wholesale and holds anything personal to one machine —
 `focus.json` today, and credentials or caches when a program needs them. Put
 runtime state there rather than adding a `.gitignore` entry per file.
+
+`tools/` is the opposite: committed scripts that talk to a device but are not
+part of the build, and are run by hand with `node tools/<name>.ts`. They are
+what regenerates the tables in `src/fonts.ts` and what shows a layout without
+waiting for the schedule to reach an interesting moment. ESLint only covers
+`src/`, so these are held to Prettier and nothing else.
+
+**Invented data never goes in `local/`, and never wears a real name.** A
+made-up schedule written to `local/focus.json` is indistinguishable from the
+real one at a glance, and a made-up block called "Standup" is indistinguishable
+from a real meeting — so the bar ends up reporting a day that does not exist,
+and every conclusion drawn from it is about nothing. This has already cost
+hours once. Test schedules go to a temp directory (`mkdtemp`), under a name
+that says what they are, holding blocks named `TEST ...`. Where a fixture has
+to be realistic in shape — a length, a descender, a word too long to break —
+keep the shape and change the words. The same applies to verifying anything
+that writes a file: point it at a scratch path, never at the configured one.
 
 The tool runs one **program** at a time — an operating mode — chosen by the
 `BUSYBAR_PROGRAM` environment variable and defaulting to `hello-world`.
@@ -192,7 +212,15 @@ distinction being that a draw fails for reasons that pass (a focus session owns
 the screen) whereas preparation fails because the program cannot work at all (a
 missing schedule file). `focus` uses it to validate its schedule, which it then
 re-reads on every draw rather than holding from startup — a file someone else
-writes has to be read when it is needed, not once.
+writes has to be read when it is needed, not once. It also uses it to write
+that schedule back out when a calendar is what it read: see `mirrorBlocks`.
+
+**A program can log, and should only do so for what it is carrying on from.**
+`ProgramContext` carries the runner's own `log`, so a program reports through
+the same channel as everything else rather than writing to the terminal on its
+own account. The bar is for anything that stops the program working — throw,
+and the runner draws it — and the log is for what is worth knowing and not
+worth failing over, like a mirror file that could not be written.
 
 Two things to keep in mind when adding one:
 
@@ -251,18 +279,31 @@ against firmware reporting `api_semver` 25.0.0.
 - **`countdown` is an element type, and the device ticks it.** It takes
   `timestamp` (seconds-based Unix, as a string), `direction` (`time_left` or
   `time_since`), and `show_hours`. Verified: it counts down with no redraws at
-  all, clamps at `00:00` rather than going negative, and widens to `H:MM:SS`
-  past an hour, which still fits 72px. There is no `font` option — the face is
-  fixed, and about ten pixels tall.
-- **`tiny` fits 18 characters across the front display.** Its widest glyph is
-  four pixels, so 18 of them exactly fill 72px. It pairs with a countdown
-  underneath inside the 16px height. Text wider than the display is clipped at
+  all, and clamps at `00:00` rather than going negative. There is no `font`
+  option — the face is fixed. Measured, it is five pixels tall and monospaced,
+  17px wide as `MM:SS` and 27px as `HH:MM:SS`, and its box carries two pixels
+  of padding past the last digit, which shows up only when the element is
+  right-aligned. `src/fonts.ts` holds those numbers.
+- **Text is clipped, not wrapped.** Text wider than the display is cut off at
   both ends unless the element is given a `width`, which makes it scroll
-  instead.
+  instead. There is no newline: `\n` is outside the printable range the API
+  accepts, so more than one line means more than one element.
 - **Redrawing restarts animations.** Reusing an element `id` replaces the
   element rather than stacking a second one, but a scrolling text element
   restarts its scroll from the beginning. Draw-once plus `timeout: 0` is the
   way to keep a smooth scroll.
+- **An element `id` outlives the drawing that stopped using it.** Elements go
+  away when they expire or are drawn over, and not before, so a drawing made of
+  a variable number of elements has to send the same ids every time — with the
+  unused ones blanked — or a line from the previous draw stays on screen. A
+  text element of a single space is valid and draws nothing.
+- **A negative `y` is fine.** Ink sits two or three rows below the y an element
+  is drawn at, so placing ink at the top of the display means a y above it. The
+  device accepts that rather than clamping.
+- **`radius` thickens a thin rectangle's corners before it rounds them.** On a
+  1px outline, radius 2 adds a pixel to each side of every corner and rounds
+  nothing; only at 3 does it start cutting the corner, at a cost of three
+  pixels on a display sixteen tall. Square corners are the sane default here.
 - **Frame grabs are base64 BGR.** `/api/screen?display=0` returns a base64 body
   that decodes to 72x16x3 bytes in BGR order, despite the spec advertising
   `image/bmp`. The back display is 160x80.
@@ -272,6 +313,74 @@ against firmware reporting `api_semver` 25.0.0.
 - **A signal handler does not keep Node alive.** Registering `SIGINT` is not
   scheduled work, so a program that draws once and waits needs a timer (or
   similar ref'd handle) to hold the event loop open.
+
+## Laying Out the Display
+
+72x16 is small enough that a layout is decided in single pixels, and the API
+will not help: it takes a font by name and offers no way to ask how wide a
+string will come out, or where its ink will land. Everything below was measured
+off a real bar and is written down in `src/fonts.ts` so it never has to be
+guessed at again.
+
+**Measure by drawing and reading the frame back.** `/api/screen?display=0`
+returns the front display as pixels, so anything about how the device renders
+can be settled in a loop: draw, capture, count lit pixels. `tools/` holds the
+scripts that produced the tables — `measure-fonts.ts` for advance widths,
+`measure-glyph-rows.ts` for the rows each glyph's ink occupies — and
+`tools/preview.ts`, which draws the focus program for a set of made-up blocks
+and prints the frames as text. Reach for that before reasoning about a layout
+in your head; it is faster and it is not a guess.
+
+Two things about measuring that are easy to get wrong:
+
+- **An advance is not the ink.** Take it as `width("cc") - width("c")` so the
+  glyph's side bearings cancel, rather than assuming ink starts at the anchor.
+  On this device every advance turned out to be the ink plus one pixel of
+  spacing, so a string's ink is its advances less one.
+- **Pack the measurement, or it takes all afternoon.** Several characters in
+  one draw, each in its own column of the display, is one round trip instead of
+  five.
+
+**What the fonts measure.** `tiny`, `small`, `normal`, `bold` and `large` are
+the useful ones. `condensed` measured identical to `normal` in every glyph, and
+`extra_large` renders lowercase input as capitals, which changes what a name
+says rather than only how big it is. Ink starts one or two rows below the
+element's y; capitals run 4, 5, 7, 7 and 9 rows tall respectively, and
+descenders add one or two more. Bracket and quote characters reach a couple of
+rows above the capitals and below the descenders, which the tables record but
+nothing sizes to — doing so would cost a whole line of text for characters
+that never appear in a block name.
+
+**Fit text, do not scroll it.** `src/text.ts` takes a string and a region and
+returns the largest font whose wrapped lines fit, along with where to draw each
+one. Scrolling turns a thing you glance at into a thing you wait for, and any
+redraw restarts it from the beginning. Three rules it follows are worth keeping
+if it is ever rewritten:
+
+- **Reject a font that has to break a word**, and try a smaller one instead. A
+  broken word is a font that is too big, not a wrap that came out long.
+- **Space lines by the nominal box, centre them by the cap band.** The band is
+  the tops of the letters down to the line they stand on; a descender is a tail
+  hanging off it. Centring on the whole ink instead sits every name carrying a
+  tail a row above every name without one, in the same font, on the same bar —
+  which reads exactly as it is: wrong. With no tail the band is the ink, so
+  this is one rule rather than a rule and an exception.
+- **Round the leftover row upwards.** Five rows of digits in ten leaves one
+  over and there is no centring it; the only choice is which way it misses.
+  Text a row low reads as centred, text a row high reads as a mistake. This
+  was measured on the bar, not reasoned about.
+- **Lend a padding row to tails.** A region only just deep enough for a font
+  has no slack: the tail hits the bottom, the clamp pushes the text back up,
+  and the evenness the band bought is lost. `Region.tailRoom` says how many
+  rows below itself a descender may reach into — one of the two padding rows,
+  here — and nothing but a tail may use it. It is deliberately not counted
+  when deciding whether a font fits: a font chosen on the strength of lent
+  room would put a tail in the padding on every name that had one.
+- **Ask whether the ink fits, not how many lines there are.** A frame and two
+  pixels of padding leave ten rows. `large` is eleven rows on paper and nine in
+  fact for a name with no descender, so a rule counting nominal line heights
+  would never reach for it, and most names would be drawn a size smaller than
+  they need to be.
 
 ## Code Conventions
 
