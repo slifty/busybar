@@ -82,8 +82,7 @@ Three details follow from how the device arbitrates the screen:
 
 A failure during startup is left on screen deliberately. The process exits, so
 nothing is coming to clear it, and a tool that never started is precisely when
-the display must not look ordinary. The next run clears it before its first
-draw, so a leftover error never sits underneath what that run draws.
+the display must not look ordinary. The next run clears it.
 
 Preemption is not a failure. An active BUSY or CUSTOM session outranking this
 tool is the device working as intended, so it is reported to the log and left
@@ -153,10 +152,67 @@ orange for fifteen.
 
 ### The schedule
 
-Blocks are read from a JSON file — `local/focus.json`, or wherever
-`BUSYBAR_FOCUS_FILE` points. `local/` is git-ignored wholesale, since a
-schedule of what you are doing all day belongs to one machine rather than to
-the repository:
+Blocks come from a calendar, or from a JSON file when no calendar is set.
+Whichever it is, it is the only part of the program that knows where blocks
+come from: everything above it — resolving overlaps, picking the current block,
+colouring it, drawing it — is written against a schedule rather than against a
+source.
+
+#### From a calendar
+
+Point `BUSYBAR_FOCUS_CALENDAR` at an iCalendar feed, as either an `https` URL
+or a path to an `.ics` file:
+
+```bash
+BUSYBAR_FOCUS_CALENDAR=https://calendar.google.com/calendar/ical/…/basic.ics
+BUSYBAR_FOCUS_CALENDAR=local/focus.ics
+```
+
+The two are told apart by parsing the value as a URL rather than by looking for
+a slash or a dot, so `local/focus.ics` stays a path and anything with an `http`
+or `https` scheme is fetched. A URL is fetched afresh on each read, with a ten
+second timeout.
+
+In Google Calendar both come from the settings page of the calendar itself:
+**Secret address in iCal format** is the URL, and **Export calendar** downloads
+a zip with an `.ics` inside it. Prefer the URL. A downloaded file is a snapshot
+and goes stale the same way a hand-written schedule does, which is the whole
+problem a calendar is meant to solve. The secret address is a credential —
+anyone holding it can read the calendar — so it belongs in `.env`.
+
+One calendar is read, and every event in it is treated as a focus block. That
+is what makes a calendar kept for this purpose work and a general-purpose one
+not: a calendar with your dentist in it will put your dentist on the bar.
+
+Recurring events are expanded properly, which means the parts that make
+recurrence real rather than nominal: an occurrence you dragged to a different
+time comes back moved, one you renamed comes back renamed, and one you deleted
+does not come back. Times written in a named timezone are resolved against the
+calendar's own definition of that zone, so a feed from a machine in another
+timezone lands at the right hour rather than being read as UTC.
+
+Four kinds of event are skipped rather than drawn, quietly, because a calendar
+is not written for this tool and one odd entry in it should not take the whole
+schedule down:
+
+| Skipped                                | Why                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| All-day events                         | They run midnight to midnight, and by the overlap rule below a single one would suppress every real block that day |
+| Events the calendar has cancelled      | The calendar already says they are off                                                                             |
+| Events ending no later than they start | Nothing to count down to                                                                                           |
+| Titles with nothing drawable           | A name is the whole of what a block says, and a blank row says nothing                                             |
+
+Only what falls near now is read — from a day back to two days ahead. The
+lookback exists to catch a block that started before now and is still running;
+the horizon is what a recurring event has to be expanded up to, since a rule
+with no end describes infinitely many occurrences.
+
+#### From a file
+
+Without a calendar, blocks are read from a JSON file — `local/focus.json`, or
+wherever `BUSYBAR_FOCUS_FILE` points. `local/` is git-ignored wholesale, since a
+schedule of what you are doing all day belongs to one machine rather than to the
+repository:
 
 ```json
 [
@@ -168,14 +224,17 @@ the repository:
 ]
 ```
 
-The file is a stand-in for a real calendar, and deliberately the only part of
-the program that knows where blocks come from. Everything above it — resolving
-overlaps, picking the current block, colouring it, drawing it — is written
-against a schedule rather than against a file.
+It predates the calendar reader and stays because a schedule you can type in a
+text editor is the fastest way to try something without exporting anything. It
+is stricter than the calendar: a block it cannot make sense of stops the tool
+rather than being skipped, because a file you wrote yourself getting something
+wrong is a mistake worth hearing about.
+
+#### Overlaps
 
 Overlapping blocks are neither merged nor trimmed. The one that starts earlier
-wins and the other is ignored outright, with ties settled by their order in the
-file. Blocks that merely touch both survive, since a block is half-open: one
+wins and the other is ignored outright, with ties settled by the order they were
+read in. Blocks that merely touch both survive, since a block is half-open: one
 ending at 10:00 has released the screen before one starting at 10:00 claims it.
 
 Names are drawn as text, and the device's fonts are bitmap ASCII, so anything
@@ -186,20 +245,24 @@ rather than a blank row.
 A schedule that is missing or malformed at startup stops the tool with the
 reason. The alternative is a bar that sits dark all day while the explanation
 scrolls past in a log. Once running, the same problem is only a failed draw,
-retried on the runner's short delay — the file belongs to whatever is writing
-it, so finding it mid-write is a moment to wait out rather than to exit on.
+retried on the runner's short delay — the source belongs to whatever is writing
+it, so finding it mid-write, or finding the network down, is a moment to wait
+out rather than to exit on. It is also drawn on the bar; see
+[When something goes wrong](#when-something-goes-wrong).
 
-### Keeping up with a file that changes
+### Keeping up with a source that changes
 
 Blocks are timestamps, not times of day, so a schedule is only ever about the
-days it actually names. That makes the file something to keep current rather
-than something to write once, and the program is built to be read from while
-someone else is writing to it.
+days it actually names. That makes the schedule something to keep current rather
+than to write once, and the program is built to be read from while something
+else is writing to it.
 
 The schedule is read on every draw, not held from startup. A process left
 running overnight therefore picks up a new day's blocks on its own, and a block
 added, moved, or cancelled during the day takes effect at the next draw without
-a restart.
+a restart. With a calendar URL that is the whole of the sync: there is no cache
+and no separate process, because a read costs one request a handful of times a
+day.
 
 Between blocks, the program will not go more than fifteen minutes without
 looking at the file again, even when the next block it can see is hours off —

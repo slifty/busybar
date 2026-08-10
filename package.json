@@ -55,6 +55,7 @@
 	},
 	"dependencies": {
 		"@busy-app/busy-lib": "^0.18.0",
-		"@pdc/http-status-codes": "^1.0.1"
+		"@pdc/http-status-codes": "^1.0.1",
+		"ical.js": "^2.2.1"
 	}
 }

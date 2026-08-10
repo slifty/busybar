@@ -137,9 +137,11 @@ src/
 └── programs/
     ├── index.ts        # Registry: name -> program
     ├── focus/
-    │   ├── blocks.ts   # Reads and validates the JSON schedule
+    │   ├── blocks.ts   # Picks the source, reads it, validates JSON schedules
+    │   ├── calendar.ts # Turns an iCalendar feed into blocks
     │   ├── focus.ts    # A focus block, its phases, and their colours
     │   ├── index.ts    # Draws the active block and schedules the next draw
+    │   ├── name.ts     # Drops what the bitmap fonts cannot draw
     │   └── schedule.ts # Overlap resolution and block lookup
     ├── hello-world/
     │   └── index.ts    # Scrolling greeting
