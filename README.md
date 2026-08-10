@@ -68,7 +68,8 @@ bar is for is telling you to go and look.
 Three details follow from how the device arbitrates the screen:
 
 - **A failure replaces what the program had drawn**, rather than appearing
-  alongside it. Two text elements on 72×16 leaves both unreadable. This means a
+  alongside it. An error laid over a drawing that is already using the 72×16 it
+  was given leaves neither of them readable. This means a
   single failed draw takes down a drawing that may still have been correct,
   which is the intended direction — a bar showing the last thing that worked is
   exactly the impression being avoided.
@@ -133,9 +134,17 @@ screen.
 ## Focus blocks
 
 `BUSYBAR_PROGRAM=focus` turns the bar into a view of the focus block you are
-currently in: its name along the top, and the time left of it counting down
-below. Between blocks the bar shows nothing and the built-in clock has the
-screen back.
+currently in: what you are doing on the left, and how long is left of it
+counting down on the right, inside a coloured frame. Between blocks the bar
+shows nothing and the built-in clock has the screen back.
+
+```
+┌────────────────────────────────────┐
+│                                    │
+│      Deep Work            44:59    │
+│                                    │
+└────────────────────────────────────┘
+```
 
 The colour says where you are in the block:
 
@@ -144,6 +153,17 @@ The colour says where you are in the block:
 | Blue   | The first 15 minutes — settling in       |
 | Green  | The middle                               |
 | Orange | The last 15 minutes — time to wrap it up |
+
+The colour is the frame and the clock; the name itself is always white. A phase
+colour on the text would dim the one thing you are trying to read — orange
+lettering at wind-down worst of all — whereas a frame changing colour is
+visible from further away than the words are, and costs the words nothing.
+
+The clock takes the right quarter of the display, and the name gets the rest.
+That is the countdown's real width rather than a proportion picked by eye: it
+is drawn by the device in a fixed monospaced face, 17px as `MM:SS`, and 27px
+once the hours appear. A block with more than an hour left therefore gives the
+name ten pixels less, and takes them back at the hour mark.
 
 A block shorter than half an hour qualifies for both ends at once. Orange wins
 there, on the grounds that being told to wrap up is worth more than being told
@@ -230,6 +250,28 @@ is stricter than the calendar: a block it cannot make sense of stops the tool
 rather than being skipped, because a file you wrote yourself getting something
 wrong is a mistake worth hearing about.
 
+#### The file when a calendar is set
+
+Setting a calendar turns this file around: it is written on every start rather
+than read, with whatever the calendar said.
+
+Nothing reads it while a calendar is set, so it is not a cache — it is there to
+be looked at. A schedule file is the first thing anyone opens to answer "what
+is the bar working from?", and one left saying something the bar stopped
+showing weeks ago answers it wrongly and convincingly. Keeping it current costs
+one write per start and removes a way to be misled.
+
+What lands in it is what the bar will draw, not what the calendar holds: names
+already reduced to what the fonts can render, all-day and cancelled events
+already dropped, and only the blocks near enough to now to matter. So unsetting
+the calendar leaves a working schedule behind rather than an empty file — which
+is also the way to go back to editing it by hand, since a start with a calendar
+set will otherwise overwrite whatever you typed.
+
+If the file cannot be written — a directory that is not there, a permission
+that is not given — the tool says so and carries on. It reads the calendar
+directly and does not need this file to work.
+
 #### Overlaps
 
 Overlapping blocks are neither merged nor trimmed. The one that starts earlier
@@ -241,6 +283,22 @@ Names are drawn as text, and the device's fonts are bitmap ASCII, so anything
 outside printable ASCII — em dashes, curly quotes, emoji — is dropped from a
 name before it is drawn. A name left with nothing drawable at all is an error
 rather than a blank row.
+
+#### Names that do not fit
+
+A name is never scrolled. Scrolling turns a thing you glance at into a thing
+you wait for, and it is undone by every redraw besides, since the animation
+starts again from the beginning.
+
+Instead the name is sized to the space it has. Every font the device ships was
+measured — how wide each character comes out, and which rows its ink occupies —
+so the program can pick the largest one the name fits in, break it across two
+lines at a space when one line will not do, and centre what it ends up with on
+the ink it actually has rather than on the font's nominal height. A short name
+gets a large one; a long one gets smaller type and a second line.
+
+A name too long for even that is cut at a space and ends in an ellipsis, so the
+bar says that there was more rather than quietly showing you part of something.
 
 A schedule that is missing or malformed at startup stops the tool with the
 reason. The alternative is a bar that sits dark all day while the explanation
@@ -270,10 +328,10 @@ otherwise a block added ahead of that one would be missed, and a schedule that
 had run out would never be looked at again. Nothing is on screen at those
 moments, so the wake-up costs a file read and no device traffic.
 
-That cap deliberately does not apply while a block is showing. Cutting a
-block's wait short would redraw it, and redrawing restarts the scroll on its
-name, so a change to a block already on screen is picked up at its next colour
-change rather than immediately.
+That cap deliberately does not apply while a block is showing. A change to a
+block already on screen is picked up at its next colour change rather than
+immediately, since waking up more often to find nothing has changed is traffic
+spent on nothing.
 
 An exhausted schedule is treated as one that has not been filled in yet, since
 that is what it usually is. The program keeps checking rather than stopping,
@@ -292,11 +350,12 @@ Two properties of the hardware keep a block to a handful of requests:
   releases the screen on its own — even if this process is not around to do it.
   The countdown reaching zero and the drawing disappearing are the same moment.
 
-What is left is three draws for a typical block: one when it starts, one when
-it turns green, one when it turns orange. The program asks to be woken at
-exactly those moments rather than polling to find them. That is not only
-tidiness — a block name too long for 72px scrolls, and redrawing restarts the
-scroll, so polling would jerk the name back to the start on every tick.
+What is left is a handful of draws for a typical block: one when it starts, one
+when it turns green, one when it turns orange, and one at the hour mark if it
+is long enough to have started with the hours showing — that being when the
+clock narrows and the name can have the room back. The program asks to be woken
+at exactly those moments rather than polling to find them, because a poll would
+be a request every few seconds to redraw something that had not changed.
 
 ## Configuration
 

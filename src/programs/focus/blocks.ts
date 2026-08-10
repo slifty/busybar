@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { MS_PER_SECOND } from "../../constants/time.ts";
 import { parseCalendar } from "./calendar.ts";
 import { drawableName } from "./name.ts";
@@ -161,8 +161,15 @@ const parseJson = (contents: string, path: string): unknown => {
 	}
 };
 
+const focusFilePath = (): string =>
+	process.env[FOCUS_FILE_ENV_VAR] ?? DEFAULT_FOCUS_FILE;
+
+// What was named as the calendar, if anything. An unset variable and one set to
+// nothing mean the same thing: no calendar, so the JSON file is what is left.
+const calendarSource = (): string => process.env[FOCUS_CALENDAR_ENV_VAR] ?? "";
+
 const loadJsonBlocks = async (): Promise<Focus[]> => {
-	const path = process.env[FOCUS_FILE_ENV_VAR] ?? DEFAULT_FOCUS_FILE;
+	const path = focusFilePath();
 	const parsed = parseJson(
 		await readLocalFile(path, FOCUS_FILE_ENV_VAR, "a focus schedule"),
 		path,
@@ -181,15 +188,69 @@ const loadJsonBlocks = async (): Promise<Focus[]> => {
 // the JSON file is what you get by default and what you fall back to by
 // unsetting the calendar.
 const loadBlocks = async (): Promise<Focus[]> => {
-	// An unset variable and one set to nothing mean the same thing here: no
-	// calendar was named, so the file is what is left.
-	const source = process.env[FOCUS_CALENDAR_ENV_VAR] ?? "";
+	const source = calendarSource();
 
 	if (source === "") {
 		return await loadJsonBlocks();
 	}
 
 	return parseCalendar(await readCalendar(source), new Date(), source);
+};
+
+// Written with tabs to match everything else here, and with the trailing
+// newline a text editor would leave.
+const INDENT = "\t";
+
+const asJson = (blocks: readonly Focus[]): string =>
+	`${JSON.stringify(
+		blocks.map(({ name, start, end }) => ({
+			name,
+			start: start.toISOString(),
+			end: end.toISOString(),
+		})),
+		undefined,
+		INDENT,
+	)}\n`;
+
+// Writes what a calendar said into the JSON file, replacing whatever was there.
+//
+// This is not a cache: the calendar is read afresh on every draw and nothing
+// falls back to the file while one is set. It is there to be looked at. A
+// schedule you cannot see is a schedule you cannot debug, and a stale file left
+// beside a live calendar is worse than no file at all -- it reads as the
+// answer to "what is the bar showing?" while being nothing of the kind.
+//
+// What lands is what the bar will draw rather than what the calendar holds:
+// names sanitised to what the fonts can render, all-day and cancelled events
+// already dropped, and only the blocks near enough to now to matter. Unsetting
+// the calendar afterwards therefore leaves a working schedule behind.
+//
+// Failing is reported and no more. The tool reads the calendar directly and
+// works perfectly without ever writing this, so a read-only directory is not a
+// reason to refuse to run -- but it is a reason to say so, since the file's
+// whole purpose is to be trusted when you look at it.
+const mirrorBlocks = async (
+	blocks: readonly Focus[],
+	log: (message: string) => void,
+): Promise<void> => {
+	if (calendarSource() === "") {
+		return;
+	}
+
+	const path = focusFilePath();
+
+	try {
+		// Written beside the file and moved over it, so that a process which
+		// dies mid-write cannot leave invalid JSON where a schedule should be.
+		const temporary = `${path}.writing`;
+
+		await writeFile(temporary, asJson(blocks), "utf8");
+		await rename(temporary, path);
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+
+		log(`could not write the schedule to ${path}: ${reason}`);
+	}
 };
 
 export {
@@ -199,4 +260,5 @@ export {
 	drawableName,
 	isFetchable,
 	loadBlocks,
+	mirrorBlocks,
 };

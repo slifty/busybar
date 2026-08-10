@@ -1,5 +1,5 @@
 import { mkdtempSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -18,6 +18,7 @@ import {
 	drawableName,
 	isFetchable,
 	loadBlocks,
+	mirrorBlocks,
 } from "../blocks.ts";
 import { SINGLE_EVENT } from "./fixtures/calendars.ts";
 import { VALID_SCHEDULE } from "./fixtures/valid-schedule.ts";
@@ -387,6 +388,94 @@ describe("loadBlocks, from a calendar", () => {
 			);
 
 			await expect(loadBlocks()).rejects.toThrow(/could not fetch/v);
+		});
+	});
+
+	// The file is not read while a calendar is set, so what this is for is the
+	// person who opens it: a schedule file saying something the bar has not
+	// shown for weeks is the first thing anyone would check.
+	describe("mirroring a calendar into the schedule file", () => {
+		const said = vi.fn<(message: string) => void>();
+
+		const jsonAt = async (path: string): Promise<unknown> =>
+			JSON.parse(await readFile(path, "utf8"));
+
+		const givenScheduleFileAt = (): string => {
+			const path = join(directory, `${String(Math.random()).slice(2)}.json`);
+
+			vi.stubEnv(FOCUS_FILE_ENV_VAR, path);
+
+			return path;
+		};
+
+		it("writes what the calendar said", async () => {
+			const path = givenScheduleFileAt();
+
+			await givenCalendarFile(SINGLE_EVENT);
+			await mirrorBlocks(await loadBlocks(), said);
+
+			expect(await jsonAt(path)).toStrictEqual([
+				{
+					name: "Deep Work",
+					start: "2026-01-02T09:00:00.000Z",
+					end: "2026-01-02T10:30:00.000Z",
+				},
+			]);
+		});
+
+		// Which is the point: unsetting the calendar afterwards leaves a
+		// working schedule rather than whatever was there before.
+		it("writes a file the loader can read back", async () => {
+			const path = givenScheduleFileAt();
+
+			await givenCalendarFile(SINGLE_EVENT);
+
+			const fromCalendar = await loadBlocks();
+
+			await mirrorBlocks(fromCalendar, said);
+			vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, "");
+			vi.stubEnv(FOCUS_FILE_ENV_VAR, path);
+
+			await expect(loadBlocks()).resolves.toStrictEqual(fromCalendar);
+		});
+
+		// Rewriting it from itself could only lose something -- the ordering,
+		// the whitespace, a comment someone left in a JSON5 moment.
+		it("leaves the file alone when there is no calendar", async () => {
+			const path = givenScheduleFileAt();
+
+			await writeFile(path, "the file as it was", "utf8");
+			vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, "");
+
+			await mirrorBlocks([], said);
+
+			expect(await readFile(path, "utf8")).toBe("the file as it was");
+		});
+
+		// The tool reads the calendar directly and works without ever writing
+		// this, so a directory it cannot write to is not a reason to refuse to
+		// run -- only a reason to say so.
+		it("reports a write it could not make rather than failing", async () => {
+			const log = vi.fn<(message: string) => void>();
+
+			vi.stubEnv(FOCUS_FILE_ENV_VAR, join(directory, "no", "such", "dir.json"));
+			await givenCalendarFile(SINGLE_EVENT);
+
+			await expect(
+				mirrorBlocks(await loadBlocks(), log),
+			).resolves.toBeUndefined();
+
+			expect(log).toHaveBeenCalledWith(expect.stringMatching(/dir\.json/v));
+		});
+
+		// A schedule half-written by a process that died is not a schedule.
+		it("leaves nothing behind if it cannot finish", async () => {
+			const path = givenScheduleFileAt();
+
+			await givenCalendarFile(SINGLE_EVENT);
+			await mirrorBlocks(await loadBlocks(), said);
+
+			await expect(readFile(`${path}.writing`, "utf8")).rejects.toThrow();
 		});
 	});
 });

@@ -6,6 +6,14 @@ interface ProgramContext {
 	// Elements on the device are namespaced by application name. Each program
 	// gets its own, so clearing one program's drawings leaves the rest alone.
 	readonly applicationName: string;
+	// The tool's own log, so that a program can report something that is worth
+	// knowing but not worth failing over -- and report it the same way the
+	// runner does, rather than writing to the terminal on its own account.
+	//
+	// Anything a program cannot carry on without belongs in a thrown error
+	// instead: the runner puts those on the bar, and a line in a log that
+	// nobody is watching is exactly what drawing failures exists to avoid.
+	readonly log: (message: string) => void;
 }
 
 // What a draw tells the runner about when to come back.

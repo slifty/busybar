@@ -104,15 +104,36 @@ describe("showError", () => {
 		expect(text?.color.toUpperCase()).toMatch(/^#FF0000/v);
 	});
 
-	// Program names run longer than 72px of `small` glyphs.
-	it("lets a name too wide for the display scroll instead of clipping", async () => {
+	// A failure is meant to be taken in at a glance from across the room, and
+	// scrolling text is a thing you have to stand and wait for.
+	it("sizes a long name down rather than scrolling it", async () => {
 		const fake = createFakeBar();
 
 		await showError(fake.bar, "random-emoji");
 
-		const text = (fake.draws[0]?.elements ?? []).find(isText);
+		const texts = (fake.draws[0]?.elements ?? []).filter(isText);
 
-		expect(text?.scroll_rate).toBeGreaterThan(0);
-		expect(text?.width).toBeGreaterThan(0);
+		expect(texts.length).toBeGreaterThan(0);
+
+		for (const text of texts) {
+			expect(text.scroll_rate).toBeUndefined();
+			expect(text.width).toBeUndefined();
+		}
+	});
+
+	// Whatever it takes -- a smaller font, more lines -- the whole of it is
+	// there to read.
+	it("keeps the whole message, across lines if it has to", async () => {
+		const fake = createFakeBar();
+
+		await showError(fake.bar, "random-emoji");
+
+		const drawn = (fake.draws[0]?.elements ?? [])
+			.filter(isText)
+			.map(({ text }) => text)
+			.join(" ");
+
+		expect(drawn).toContain("random-emoji");
+		expect(drawn).toContain("ERROR");
 	});
 });

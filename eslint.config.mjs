@@ -78,6 +78,16 @@ export default defineConfig([
 		},
 	},
 	{
+		files: ["src/fonts.ts"],
+
+		rules: {
+			// The font tables are measurements of the device, one number per
+			// glyph. There is no name to give any of them that says more than
+			// the position in the table already does.
+			"@typescript-eslint/no-magic-numbers": "off",
+		},
+	},
+	{
 		files: ["**/*.test.ts", "**/__tests__/**", "src/test/**"],
 
 		rules: {

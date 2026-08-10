@@ -115,7 +115,7 @@ const runProgram = async (
 	program: Program,
 	log: (message: string) => void,
 ): Promise<void> => {
-	const context = { bar, applicationName: program.name };
+	const context = { bar, applicationName: program.name, log };
 
 	// Before anything is scheduled or drawn, so that a program which cannot
 	// prepare stops the tool with its reason instead of being retried. Nothing

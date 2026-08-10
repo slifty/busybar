@@ -145,7 +145,12 @@ const drawsWith = ({ draws }: FakeBar, id: string): unknown[] =>
 const programDraws = (fake: FakeBar): unknown[] =>
 	drawsWith(fake, STUB_ELEMENT_ID);
 
-const errorDraws = (fake: FakeBar): unknown[] => drawsWith(fake, "error");
+// A failure is drawn as one element per line, numbered, so what identifies it
+// is the prefix rather than any single id.
+const errorDraws = ({ draws }: FakeBar): unknown[] =>
+	draws.filter(({ elements }) =>
+		elements.some((element) => element.id.startsWith("error")),
+	);
 
 describe("runProgram", () => {
 	beforeEach(() => {
