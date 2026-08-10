@@ -31,19 +31,27 @@ npm run dev                              # runs the default
 BUSYBAR_PROGRAM=hello-world npm run dev
 ```
 
-| Program        | What it does                                      |
-| -------------- | ------------------------------------------------- |
-| `hello-world`  | Scrolls "Hello, World!" across the front display  |
-| `random-emoji` | Shows a random emoji, changing every five seconds |
+| Program        | What it does                                             |
+| -------------- | -------------------------------------------------------- |
+| `hello-world`  | Scrolls "Hello, World!" across the front display         |
+| `random-emoji` | Shows a random emoji, changing every five seconds        |
+| `focus`        | Shows the focus block you are in and the time left of it |
 
 An unknown name exits with the list of valid ones.
 
-Everything common to programs lives in the runner: connecting, drawing,
-refreshing on a schedule where a program asks for one, tolerating preemption,
-and clearing the display on the way out. A program supplies a name, a
-description, a `draw` function, and optionally a refresh interval. Adding one
-means adding a folder under `src/programs/` and a single entry in
-`src/programs/index.ts`.
+Everything common to programs lives in the runner: connecting, drawing, waiting
+until a program wants to draw again, tolerating preemption, and clearing the
+display on the way out. A program supplies a name, a description, and a `draw`
+function. Adding one means adding a folder under `src/programs/` and a single
+entry in `src/programs/index.ts`.
+
+Programs schedule themselves rather than being polled: `draw` returns the
+number of milliseconds until it wants to be called again, or nothing at all if
+the device can sustain what was drawn on its own. The interesting moments are
+rarely evenly spaced — a focus block changes colour at two known instants and
+is static in between — and redrawing is not free, since it restarts scroll
+animations. Asking to be woken at the exact moment something changes keeps the
+screen correct without redrawing to check.
 
 ## Hello, World
 
@@ -56,7 +64,7 @@ Two properties of the device shape how this works:
   timeout and expire, but a timeout of `0` means the element stays until it is
   cleared. That matters here because redrawing an element restarts its scroll
   animation, so a redraw loop would jerk the text back to the start on every
-  tick.
+  tick. Its draw asks for no follow-up.
 - **A focus session outranks us.** Draws are priority-ranked, and an active
   BUSY or CUSTOM session sits above the default. The greeting reports that it
   was preempted rather than pretending it drew something.
@@ -74,10 +82,84 @@ rejects anything outside `^[\x20-\x7E]+$`. The firmware ships emoji as image
 sprites, though, so this program references those by `stock_path` and uploads
 nothing at all — no image encoding, no asset management, no bundled files.
 
-Unlike the greeting, this one does refresh on a schedule, since the point is
-that the picture changes. Its elements expire after twice the refresh interval,
-so a single failed draw leaves the previous emoji up rather than blanking the
+Unlike the greeting, this one asks to be drawn again every five seconds, since
+the point is that the picture changes. Its elements expire after twice that, so
+a single failed draw leaves the previous emoji up rather than blanking the
 screen.
+
+## Focus blocks
+
+`BUSYBAR_PROGRAM=focus` turns the bar into a view of the focus block you are
+currently in: its name along the top, and the time left of it counting down
+below. Between blocks the bar shows nothing and the built-in clock has the
+screen back.
+
+The colour says where you are in the block:
+
+| Colour | When                                     |
+| ------ | ---------------------------------------- |
+| Blue   | The first 15 minutes — settling in       |
+| Green  | The middle                               |
+| Orange | The last 15 minutes — time to wrap it up |
+
+A block shorter than half an hour qualifies for both ends at once. Orange wins
+there, on the grounds that being told to wrap up is worth more than being told
+you have just started, so a twenty-minute block reads blue for five minutes and
+orange for fifteen.
+
+### The schedule
+
+Blocks are read from a JSON file — `local/focus.json`, or wherever
+`BUSYBAR_FOCUS_FILE` points. `local/` is git-ignored wholesale, since a
+schedule of what you are doing all day belongs to one machine rather than to
+the repository:
+
+```json
+[
+	{
+		"name": "Deep Work",
+		"start": "2026-08-07T09:00:00Z",
+		"end": "2026-08-07T10:30:00Z"
+	}
+]
+```
+
+The file is a stand-in for a real calendar, and deliberately the only part of
+the program that knows where blocks come from. Everything above it — resolving
+overlaps, picking the current block, colouring it, drawing it — is written
+against a schedule rather than against a file.
+
+Overlapping blocks are neither merged nor trimmed. The one that starts earlier
+wins and the other is ignored outright, with ties settled by their order in the
+file. Blocks that merely touch both survive, since a block is half-open: one
+ending at 10:00 has released the screen before one starting at 10:00 claims it.
+
+Names are drawn as text, and the device's fonts are bitmap ASCII, so anything
+outside printable ASCII — em dashes, curly quotes, emoji — is dropped from a
+name before it is drawn. A name left with nothing drawable at all is an error
+rather than a blank row.
+
+A schedule that is missing or malformed stops the tool with the reason. The
+alternative is a bar that sits dark all day while the explanation scrolls past
+in a log.
+
+### What the device does for itself
+
+Two properties of the hardware keep a block to a handful of requests:
+
+- **The countdown is a device-side element.** It takes the block's end as a
+  Unix timestamp and ticks down by itself, so nothing has to redraw it to keep
+  the time honest.
+- **Elements are given an expiry rather than a timeout.** They carry the
+  block's end as `display_until`, so the device takes them down on time and
+  releases the screen on its own — even if this process is not around to do it.
+  The countdown reaching zero and the drawing disappearing are the same moment.
+
+What is left is three draws for a typical block: one when it starts, one when
+it turns green, one when it turns orange. The program asks to be woken at
+exactly those moments rather than polling to find them. That is not only
+tidiness — a block name too long for 72px scrolls, and redrawing restarts the
+scroll, so polling would jerk the name back to the start on every tick.
 
 ## Development
 
@@ -106,6 +188,20 @@ To automatically fix what can be fixed:
 ```bash
 npm run format
 ```
+
+To run the tests:
+
+```bash
+npm test              # once
+npm run test:watch    # re-running on change
+npm run test:coverage # once, with a coverage report in coverage/
+```
+
+Tests are [Vitest](https://vitest.dev). They live in a `__tests__/` directory
+beside the code they cover — `src/programs/random-emoji/__tests__/emoji.test.ts`
+covers `src/programs/random-emoji/emoji.ts` — and never loose next to the source
+file. Fixtures sit in that same `__tests__` folder, beside the suite that uses
+them; shared tooling — helpers and factories — goes in `src/test/`.
 
 To build the project:
 

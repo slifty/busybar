@@ -5,7 +5,7 @@ import {
 } from "../../config.ts";
 import { MS_PER_SECOND } from "../../constants/time.ts";
 import { randomEmojiName, stockPathFor } from "./emoji.ts";
-import type { Program, ProgramContext } from "../../program.ts";
+import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 
 // A stable element id. Redrawing the same id replaces what is on screen
 // instead of stacking a second sprite on top of the first.
@@ -26,7 +26,7 @@ const ELEMENT_TIMEOUT_SECONDS =
 const draw = async ({
 	bar,
 	applicationName,
-}: ProgramContext): Promise<void> => {
+}: ProgramContext): Promise<DrawResult> => {
 	await bar.DisplayDraw({
 		application_name: applicationName,
 		priority: DRAW_PRIORITY,
@@ -47,12 +47,13 @@ const draw = async ({
 			},
 		],
 	});
+
+	return { nextDrawInMs: REFRESH_INTERVAL_MS };
 };
 
 const randomEmoji: Program = {
 	name: "random-emoji",
 	description: "Shows a random emoji, changing every few seconds",
-	refreshIntervalMs: REFRESH_INTERVAL_MS,
 	draw,
 };
 

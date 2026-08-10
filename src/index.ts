@@ -17,8 +17,18 @@ const log = (message: string): void => {
 	process.stdout.write(`busybar: ${message}\n`);
 };
 
-const describe = (error: unknown): string =>
-	error instanceof Error ? error.message : String(error);
+// Errors are reported with their causes appended, because the message that
+// explains what went wrong is usually the innermost one: "could not read
+// focus.json" is only useful next to the ENOENT that prompted it.
+const describe = (error: unknown): string => {
+	if (!(error instanceof Error)) {
+		return String(error);
+	}
+
+	return error.cause === undefined
+		? error.message
+		: `${error.message}: ${describe(error.cause)}`;
+};
 
 const main = async (): Promise<void> => {
 	const requested = process.env[PROGRAM_ENV_VAR] ?? DEFAULT_PROGRAM_NAME;
@@ -39,7 +49,6 @@ const main = async (): Promise<void> => {
 
 	log(`connected to "${name}" at ${DEVICE_ADDRESS}`);
 	log(`running "${program.name}" -- ${program.description}`);
-	log("press Ctrl-C to stop");
 
 	await runProgram(bar, program, log);
 };

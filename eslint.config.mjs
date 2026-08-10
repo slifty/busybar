@@ -78,7 +78,7 @@ export default defineConfig([
 		},
 	},
 	{
-		files: ["**/*.test.ts"],
+		files: ["**/*.test.ts", "**/__tests__/**", "src/test/**"],
 
 		rules: {
 			// Forcing return type definitions in our ad-hoc test functions is not worth
@@ -87,6 +87,10 @@ export default defineConfig([
 
 			// Tests use hard coded numbers in lots of places, and that's OK.
 			"@typescript-eslint/no-magic-numbers": "off",
+
+			// Nesting a `describe` inside a `describe` inside an `it` is how a
+			// suite is grouped, not a sign of a tangle.
+			"max-nested-callbacks": "off",
 		},
 	},
 ]);
