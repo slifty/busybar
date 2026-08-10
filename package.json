@@ -9,7 +9,7 @@
 		"build": "npm run cleanup && npm run build:node",
 		"build:node": "tsc -p tsconfig.json",
 		"cleanup": "rimraf dist",
-		"dev": "node --watch src/index.ts",
+		"dev": "node --env-file-if-exists=.env --watch src/index.ts",
 		"format": "npm run format:eslint && npm run format:prettier",
 		"format:eslint": "eslint ./src --fix || true",
 		"format:prettier": "prettier . --write",
@@ -17,7 +17,7 @@
 		"lint:eslint": "eslint ./src --max-warnings=0",
 		"lint:prettier": "prettier . --check",
 		"lint:tsc": "tsc --noEmit -p tsconfig.dev.json",
-		"start": "node dist/index.js",
+		"start": "node --env-file-if-exists=.env dist/index.js",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
 		"test:watch": "vitest"
@@ -55,6 +55,7 @@
 	},
 	"dependencies": {
 		"@busy-app/busy-lib": "^0.18.0",
-		"@pdc/http-status-codes": "^1.0.1"
+		"@pdc/http-status-codes": "^1.0.1",
+		"ical.js": "^2.2.1"
 	}
 }

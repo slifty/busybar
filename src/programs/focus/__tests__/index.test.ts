@@ -15,7 +15,7 @@ import { MS_PER_MINUTE, MS_PER_SECOND } from "../../../constants/time.ts";
 import { createFakeBar } from "../../../test/bar.ts";
 import { FOCUS_FILE_ENV_VAR } from "../blocks.ts";
 import { colorFor } from "../focus.ts";
-import { focus } from "../index.ts";
+import { IDLE_REFRESH_MS, focus } from "../index.ts";
 import type { BusyBar } from "@busy-app/busy-lib";
 import type { ProgramContext } from "../../../program.ts";
 
@@ -70,11 +70,17 @@ const SCHEDULE = [
 	},
 ];
 
-// Points the program at a schedule and runs its one-time preparation, which is
-// what a draw needs before it can answer anything.
-const start = async (blocks: unknown = SCHEDULE): Promise<ProgramContext> => {
-	const path = join(directory, `${String(Math.random()).slice(2)}.json`);
+// A schedule file of its own per test, so one rewriting its schedule cannot
+// disturb another.
+const scheduleFile = (): string =>
+	join(directory, `${String(Math.random()).slice(2)}.json`);
 
+// Points the program at a schedule and runs its one-time preparation. The path
+// is worth naming when a test means to rewrite the file underneath the program.
+const start = async (
+	blocks: unknown = SCHEDULE,
+	path: string = scheduleFile(),
+): Promise<ProgramContext> => {
 	await writeFile(path, JSON.stringify(blocks), "utf8");
 	vi.stubEnv(FOCUS_FILE_ENV_VAR, path);
 
@@ -264,12 +270,30 @@ describe("the focus program", () => {
 		});
 
 		it("waits for the next block to start", async () => {
+			// Close enough to the next block that waiting for it outright is
+			// sooner than the program would look at the schedule anyway.
+			vi.setSystemTime(new Date("2026-01-01T10:55:00Z"));
+
 			const fake = createFakeBar();
 			const context = await start();
 
 			const result = await focus.draw({ ...context, bar: fake.bar });
 
 			expect(result.nextDrawInMs).toBe(NEXT_BLOCK_START.getTime() - Date.now());
+		});
+
+		// Waiting out a long gap in one go would miss a block added ahead of the
+		// one already in the file.
+		it("looks again well before a distant block starts", async () => {
+			const fake = createFakeBar();
+			const context = await start();
+
+			const result = await focus.draw({ ...context, bar: fake.bar });
+
+			expect(result.nextDrawInMs).toBe(IDLE_REFRESH_MS);
+			expect(result.nextDrawInMs).toBeLessThan(
+				NEXT_BLOCK_START.getTime() - Date.now(),
+			);
 		});
 	});
 
@@ -287,26 +311,70 @@ describe("the focus program", () => {
 			expect(fake.draws).toHaveLength(0);
 		});
 
-		it("asks for no further draws at all", async () => {
+		// An empty schedule usually means one that has not been filled in yet, so
+		// giving up here would stay given up until the tool was restarted.
+		it("keeps checking rather than giving up", async () => {
 			const fake = createFakeBar();
 			const context = await start();
 
 			const result = await focus.draw({ ...context, bar: fake.bar });
 
-			expect(result.nextDrawInMs).toBeUndefined();
+			expect(result.nextDrawInMs).toBe(IDLE_REFRESH_MS);
 		});
 	});
 
-	describe("before it has been prepared", () => {
-		it("refuses to draw rather than showing something wrong", async () => {
-			vi.resetModules();
+	describe("when the schedule changes underneath it", () => {
+		it("draws a block added after it started", async () => {
+			const path = scheduleFile();
+			const context = await start([], path);
+			const before = createFakeBar();
 
-			const { focus: unprepared } = await import("../index.ts");
+			await focus.draw({ ...context, bar: before.bar });
+
+			expect(before.draws).toHaveLength(0);
+
+			await writeFile(path, JSON.stringify(SCHEDULE), "utf8");
+
+			const after = createFakeBar();
+
+			await focus.draw({ ...context, bar: after.bar });
+
+			const text = (after.draws[0]?.elements ?? []).find(isText);
+
+			expect(text?.text).toBe("Deep Work: Rendering Pipeline");
+		});
+
+		it("stops drawing a block removed after it started", async () => {
+			const path = scheduleFile();
+			const context = await start(SCHEDULE, path);
+			const before = createFakeBar();
+
+			await focus.draw({ ...context, bar: before.bar });
+
+			expect(before.draws).toHaveLength(1);
+
+			await writeFile(path, JSON.stringify([]), "utf8");
+
+			const after = createFakeBar();
+
+			await focus.draw({ ...context, bar: after.bar });
+
+			expect(after.draws).toHaveLength(0);
+		});
+
+		// The file is someone else's to write, so it can be mid-write or wrong
+		// long after startup. That is the runner's short retry, not a crash.
+		it("fails the draw when the schedule stops being readable", async () => {
+			const path = scheduleFile();
+			const context = await start(SCHEDULE, path);
+
+			await writeFile(path, "{ not json", "utf8");
+
 			const { bar } = createFakeBar();
 
-			await expect(
-				unprepared.draw({ bar, applicationName: unprepared.name }),
-			).rejects.toThrow(/never loaded/v);
+			await expect(focus.draw({ ...context, bar })).rejects.toThrow(
+				/not valid JSON/v,
+			);
 		});
 	});
 });

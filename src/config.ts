@@ -10,11 +10,29 @@ const DEVICE_ADDRESS = "10.0.4.20";
 // Environment variable naming which program to run.
 const PROGRAM_ENV_VAR = "BUSYBAR_PROGRAM";
 
-// Draw priority, in the range [1, 100]. A draw is accepted when its priority
-// is greater than or equal to that of the app currently on screen: built-in
-// apps sit at 10, an active BUSY or CUSTOM work session at 90. The API's
-// default of 50 therefore draws over the clock but yields to a focus session,
-// which is the behaviour we want.
+// Draw priority, in the range [1, 100]. Built-in apps sit at 10, an active
+// BUSY or CUSTOM work session at 90. The API's default of 50 therefore draws
+// over the clock but yields to a focus session, which is the behaviour we
+// want.
+//
+// A draw is accepted when it outranks the application currently holding the
+// screen, or when it comes from that same application at the same priority.
+//
+// This is measured rather than read, because the API schema says the opposite
+// -- it claims an equal-priority request from a different application_name
+// overrides whatever is on screen, and the firmware answers 409. What the
+// device actually does:
+//
+//   incumbent a@50, then b@50   ->  409
+//   incumbent a@50, then a@50   ->  accepted
+//   incumbent a@50, then a@49   ->  409
+//   incumbent a@50, then a@51   ->  accepted
+//   nothing on screen, then b@50 -> accepted
+//
+// Repainting on a program's own schedule therefore works, and anything else
+// this tool wants on screen has to go under the running program's application
+// name: a second name of our own would be an application competing with
+// itself, and would lose.
 const DRAW_PRIORITY = 50;
 
 // The front display is 72x16. The back display is 160x80 and unused so far.

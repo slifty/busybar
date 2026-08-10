@@ -40,10 +40,53 @@ BUSYBAR_PROGRAM=hello-world npm run dev
 An unknown name exits with the list of valid ones.
 
 Everything common to programs lives in the runner: connecting, drawing, waiting
-until a program wants to draw again, tolerating preemption, and clearing the
-display on the way out. A program supplies a name, a description, and a `draw`
-function. Adding one means adding a folder under `src/programs/` and a single
-entry in `src/programs/index.ts`.
+until a program wants to draw again, tolerating preemption, putting failures on
+the display, and clearing it on the way out. A program supplies a name, a
+description, and a `draw` function. Adding one means adding a folder under
+`src/programs/` and a single entry in `src/programs/index.ts`.
+
+### When something goes wrong
+
+A failure goes on the bar, in red, as well as into the log:
+
+```
+focus: ERROR
+```
+
+The reason it is there at all is that failure is otherwise invisible. The bar
+falls back to its built-in clock whenever nothing is drawn over it, so a
+program between focus blocks, a program retrying a draw it will never land, and
+a program that died half an hour ago all look identical from across the room —
+and only the first of those is fine. Anything that leaves you believing the bar
+will do something it will not is the thing worth preventing.
+
+It names the program rather than the problem. There is no version of an HTTP
+error or a parse failure that reads well on 72×16 pixels, and none of it is
+actionable from across the room; the terminal has the reason in full. What the
+bar is for is telling you to go and look.
+
+Three details follow from how the device arbitrates the screen:
+
+- **A failure replaces what the program had drawn**, rather than appearing
+  alongside it. Two text elements on 72×16 leaves both unreadable. This means a
+  single failed draw takes down a drawing that may still have been correct,
+  which is the intended direction — a bar showing the last thing that worked is
+  exactly the impression being avoided.
+- **It is drawn under the program's own application name.** Draws are ranked by
+  priority, and the device settles a tie in favour of whichever application
+  already holds the screen. An error kept under a name of its own would be one
+  the program could never draw over, so the report of the failure would become
+  the thing preventing the recovery.
+- **It comes down before each retry, not after one succeeds**, for the same
+  reason.
+
+A failure during startup is left on screen deliberately. The process exits, so
+nothing is coming to clear it, and a tool that never started is precisely when
+the display must not look ordinary. The next run clears it.
+
+Preemption is not a failure. An active BUSY or CUSTOM session outranking this
+tool is the device working as intended, so it is reported to the log and left
+off the display — where it could not be drawn anyway.
 
 Programs schedule themselves rather than being polled: `draw` returns the
 number of milliseconds until it wants to be called again, or nothing at all if
@@ -109,10 +152,67 @@ orange for fifteen.
 
 ### The schedule
 
-Blocks are read from a JSON file — `local/focus.json`, or wherever
-`BUSYBAR_FOCUS_FILE` points. `local/` is git-ignored wholesale, since a
-schedule of what you are doing all day belongs to one machine rather than to
-the repository:
+Blocks come from a calendar, or from a JSON file when no calendar is set.
+Whichever it is, it is the only part of the program that knows where blocks
+come from: everything above it — resolving overlaps, picking the current block,
+colouring it, drawing it — is written against a schedule rather than against a
+source.
+
+#### From a calendar
+
+Point `BUSYBAR_FOCUS_CALENDAR` at an iCalendar feed, as either an `https` URL
+or a path to an `.ics` file:
+
+```bash
+BUSYBAR_FOCUS_CALENDAR=https://calendar.google.com/calendar/ical/…/basic.ics
+BUSYBAR_FOCUS_CALENDAR=local/focus.ics
+```
+
+The two are told apart by parsing the value as a URL rather than by looking for
+a slash or a dot, so `local/focus.ics` stays a path and anything with an `http`
+or `https` scheme is fetched. A URL is fetched afresh on each read, with a ten
+second timeout.
+
+In Google Calendar both come from the settings page of the calendar itself:
+**Secret address in iCal format** is the URL, and **Export calendar** downloads
+a zip with an `.ics` inside it. Prefer the URL. A downloaded file is a snapshot
+and goes stale the same way a hand-written schedule does, which is the whole
+problem a calendar is meant to solve. The secret address is a credential —
+anyone holding it can read the calendar — so it belongs in `.env`.
+
+One calendar is read, and every event in it is treated as a focus block. That
+is what makes a calendar kept for this purpose work and a general-purpose one
+not: a calendar with your dentist in it will put your dentist on the bar.
+
+Recurring events are expanded properly, which means the parts that make
+recurrence real rather than nominal: an occurrence you dragged to a different
+time comes back moved, one you renamed comes back renamed, and one you deleted
+does not come back. Times written in a named timezone are resolved against the
+calendar's own definition of that zone, so a feed from a machine in another
+timezone lands at the right hour rather than being read as UTC.
+
+Four kinds of event are skipped rather than drawn, quietly, because a calendar
+is not written for this tool and one odd entry in it should not take the whole
+schedule down:
+
+| Skipped                                | Why                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| All-day events                         | They run midnight to midnight, and by the overlap rule below a single one would suppress every real block that day |
+| Events the calendar has cancelled      | The calendar already says they are off                                                                             |
+| Events ending no later than they start | Nothing to count down to                                                                                           |
+| Titles with nothing drawable           | A name is the whole of what a block says, and a blank row says nothing                                             |
+
+Only what falls near now is read — from a day back to two days ahead. The
+lookback exists to catch a block that started before now and is still running;
+the horizon is what a recurring event has to be expanded up to, since a rule
+with no end describes infinitely many occurrences.
+
+#### From a file
+
+Without a calendar, blocks are read from a JSON file — `local/focus.json`, or
+wherever `BUSYBAR_FOCUS_FILE` points. `local/` is git-ignored wholesale, since a
+schedule of what you are doing all day belongs to one machine rather than to the
+repository:
 
 ```json
 [
@@ -124,14 +224,17 @@ the repository:
 ]
 ```
 
-The file is a stand-in for a real calendar, and deliberately the only part of
-the program that knows where blocks come from. Everything above it — resolving
-overlaps, picking the current block, colouring it, drawing it — is written
-against a schedule rather than against a file.
+It predates the calendar reader and stays because a schedule you can type in a
+text editor is the fastest way to try something without exporting anything. It
+is stricter than the calendar: a block it cannot make sense of stops the tool
+rather than being skipped, because a file you wrote yourself getting something
+wrong is a mistake worth hearing about.
+
+#### Overlaps
 
 Overlapping blocks are neither merged nor trimmed. The one that starts earlier
-wins and the other is ignored outright, with ties settled by their order in the
-file. Blocks that merely touch both survive, since a block is half-open: one
+wins and the other is ignored outright, with ties settled by the order they were
+read in. Blocks that merely touch both survive, since a block is half-open: one
 ending at 10:00 has released the screen before one starting at 10:00 claims it.
 
 Names are drawn as text, and the device's fonts are bitmap ASCII, so anything
@@ -139,9 +242,43 @@ outside printable ASCII — em dashes, curly quotes, emoji — is dropped from a
 name before it is drawn. A name left with nothing drawable at all is an error
 rather than a blank row.
 
-A schedule that is missing or malformed stops the tool with the reason. The
-alternative is a bar that sits dark all day while the explanation scrolls past
-in a log.
+A schedule that is missing or malformed at startup stops the tool with the
+reason. The alternative is a bar that sits dark all day while the explanation
+scrolls past in a log. Once running, the same problem is only a failed draw,
+retried on the runner's short delay — the source belongs to whatever is writing
+it, so finding it mid-write, or finding the network down, is a moment to wait
+out rather than to exit on. It is also drawn on the bar; see
+[When something goes wrong](#when-something-goes-wrong).
+
+### Keeping up with a source that changes
+
+Blocks are timestamps, not times of day, so a schedule is only ever about the
+days it actually names. That makes the schedule something to keep current rather
+than to write once, and the program is built to be read from while something
+else is writing to it.
+
+The schedule is read on every draw, not held from startup. A process left
+running overnight therefore picks up a new day's blocks on its own, and a block
+added, moved, or cancelled during the day takes effect at the next draw without
+a restart. With a calendar URL that is the whole of the sync: there is no cache
+and no separate process, because a read costs one request a handful of times a
+day.
+
+Between blocks, the program will not go more than fifteen minutes without
+looking at the file again, even when the next block it can see is hours off —
+otherwise a block added ahead of that one would be missed, and a schedule that
+had run out would never be looked at again. Nothing is on screen at those
+moments, so the wake-up costs a file read and no device traffic.
+
+That cap deliberately does not apply while a block is showing. Cutting a
+block's wait short would redraw it, and redrawing restarts the scroll on its
+name, so a change to a block already on screen is picked up at its next colour
+change rather than immediately.
+
+An exhausted schedule is treated as one that has not been filled in yet, since
+that is what it usually is. The program keeps checking rather than stopping,
+which is what lets a sync that has not run yet, or a file written later in the
+day, still reach the bar.
 
 ### What the device does for itself
 
@@ -160,6 +297,31 @@ it turns green, one when it turns orange. The program asks to be woken at
 exactly those moments rather than polling to find them. That is not only
 tidiness — a block name too long for 72px scrolls, and redrawing restarts the
 scroll, so polling would jerk the name back to the start on every tick.
+
+## Configuration
+
+Everything configurable is read from the environment. Node loads a `.env` file
+natively, so there is no `dotenv` dependency:
+
+```bash
+cp .env.example .env
+```
+
+[`.env.example`](.env.example) lists every variable and its default, in a block
+per program — add a block there whenever a program gains a setting, so there is
+one place to discover what can be set. `.env` itself is git-ignored.
+
+Running without a `.env` is fine. Every setting has a default, and the scripts
+use `--env-file-if-exists`, which carries on when the file is absent rather
+than failing the way plain `--env-file` does. It does print a one-line notice
+to stderr saying so.
+
+A variable set in the environment beats the same variable in `.env`, so a
+one-off run needs no edit:
+
+```bash
+BUSYBAR_PROGRAM=focus npm run dev
+```
 
 ## Development
 

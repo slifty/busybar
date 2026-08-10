@@ -98,6 +98,30 @@ npm run lint
 (including import ordering). `npm run lint` additionally runs `tsc --noEmit`
 against `tsconfig.dev.json`.
 
+## Configuration
+
+Configuration is environment variables, loaded from `.env` by Node itself —
+`npm run dev` and `npm start` pass `--env-file-if-exists=.env`. There is no
+`dotenv` dependency and there should not be one.
+
+- **`--env-file-if-exists`, not `--env-file`.** The latter exits non-zero when
+  the file is missing, which would make a `.env` mandatory. Every setting has a
+  default, so it must not be.
+- **A variable already in the environment wins over `.env`.** That is what
+  makes `BUSYBAR_PROGRAM=focus npm run dev` work without editing anything.
+- **Tests never see `.env`.** Vitest does not load it into `process.env`, so a
+  developer's local settings cannot change what the suite does. Tests that care
+  about a variable set it themselves with `vi.stubEnv`.
+- **Every variable is prefixed `BUSYBAR_`**, and anything belonging to one
+  program carries that program's name too — `BUSYBAR_FOCUS_FILE`. Core settings
+  are read in `src/config.ts`; a program's own settings are read inside that
+  program's folder, never centrally.
+
+`.env.example` is committed and is the catalogue: one block per program, every
+variable with its default. `.gitignore` ignores `.env` and `.env.*` but
+re-includes `.env.example`. Adding a setting without adding it there leaves it
+undiscoverable, so treat the two as one change.
+
 ## Project Structure
 
 ```
@@ -113,9 +137,11 @@ src/
 └── programs/
     ├── index.ts        # Registry: name -> program
     ├── focus/
-    │   ├── blocks.ts   # Reads and validates the JSON schedule
+    │   ├── blocks.ts   # Picks the source, reads it, validates JSON schedules
+    │   ├── calendar.ts # Turns an iCalendar feed into blocks
     │   ├── focus.ts    # A focus block, its phases, and their colours
     │   ├── index.ts    # Draws the active block and schedules the next draw
+    │   ├── name.ts     # Drops what the bitmap fonts cannot draw
     │   └── schedule.ts # Overlap resolution and block lookup
     ├── hello-world/
     │   └── index.ts    # Scrolling greeting
@@ -139,7 +165,18 @@ Core code sits at the root of `src/`; each program gets its own folder under
 `src/programs/`. A program declares a `name`, a `description`, and a `draw`
 function. The runner owns everything common: the first draw, waiting for the
 next one, tolerating HTTP 409 preemption, holding the event loop open, retrying
-after a failure, and clearing the display on exit.
+after a failure, putting failures on the display, and clearing it on exit.
+
+**Failure is drawn, not just logged.** The bar falls back to its clock whenever
+nothing is drawn over it, so a broken program and an idle one look the same.
+The runner draws a red `<program>: ERROR` on any draw failure that is not
+preemption, and on a fatal `start`. Three constraints on that, all from how the
+device arbitrates the screen: it goes under the program's own application name
+(the device gives a priority tie to the incumbent application, so an error
+under any other name is one the program can never draw over); it clears the
+program's elements first rather than overlaying them; and it is taken down
+before each retry rather than after a success, or it would block the recovery
+that clears it. See `showError` in `src/display.ts`.
 
 **Programs schedule themselves.** `draw` returns a `DrawResult`, whose
 `nextDrawInMs` says how long the runner should wait before drawing again.
@@ -153,7 +190,9 @@ optional `start`, run once before the first draw. Failing there is fatal and
 exits the tool with the reason, unlike a failed draw, which is retried — the
 distinction being that a draw fails for reasons that pass (a focus session owns
 the screen) whereas preparation fails because the program cannot work at all (a
-missing schedule file). `focus` uses it to read and validate its blocks.
+missing schedule file). `focus` uses it to validate its schedule, which it then
+re-reads on every draw rather than holding from startup — a file someone else
+writes has to be read when it is needed, not once.
 
 Two things to keep in mind when adding one:
 
