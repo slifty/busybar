@@ -2,21 +2,17 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { MS_PER_SECOND } from "../../constants/time.ts";
 import { parseCalendar } from "./calendar.ts";
 import { drawableName } from "./name.ts";
+import { CALENDAR_KEY, FILE_KEY } from "./settings.ts";
 import type { Focus } from "./focus.ts";
+import type { FocusSettings } from "./settings.ts";
 
 // Where the blocks come from.
 //
 // Two sources, and the program above this cannot tell which it got. A calendar
 // is the real one; the JSON file predates it and stays because a schedule you
 // can type in a text editor is the fastest way to try something without
-// exporting anything.
-//
-// `local/` is git-ignored wholesale: it is where anything personal to one
-// machine lives, which a schedule of what someone is doing all day plainly is.
-// A calendar URL kept in `.env` and a cache belong in there beside it.
-const FOCUS_CALENDAR_ENV_VAR = "BUSYBAR_FOCUS_CALENDAR";
-const FOCUS_FILE_ENV_VAR = "BUSYBAR_FOCUS_FILE";
-const DEFAULT_FOCUS_FILE = "local/focus.json";
+// exporting anything. Which of them is in use is `programs.focus.calendar`,
+// and both are read through `settings.ts`.
 
 // How long to wait for a calendar served over HTTP.
 //
@@ -86,7 +82,8 @@ const parseBlock = (value: unknown, index: number, path: string): Focus => {
 //
 // A source that is missing is a mistake worth stopping for: the alternative is
 // a bar that sits dark all day while the reason scrolls past in a log. Saying
-// which variable to set is most of what makes that message useful.
+// which setting to fix, and in which file, is most of what makes that message
+// useful.
 //
 // `what` names the kind of thing that was expected, because a calendar and a
 // schedule file are read the same way but configured separately -- a message
@@ -94,14 +91,14 @@ const parseBlock = (value: unknown, index: number, path: string): Focus => {
 // time it appeared.
 const readLocalFile = async (
 	path: string,
-	variable: string,
+	setting: string,
 	what: string,
 ): Promise<string> => {
 	try {
 		return await readFile(path, "utf8");
 	} catch (error) {
 		throw new Error(
-			`could not read ${path} -- set ${variable} to point at ${what}`,
+			`could not read ${path} -- set ${setting} to point at ${what}`,
 			{ cause: error },
 		);
 	}
@@ -148,10 +145,13 @@ const fetchCalendar = async (url: string): Promise<string> => {
 	return await response.text();
 };
 
-const readCalendar = async (source: string): Promise<string> =>
+const readCalendar = async (
+	source: string,
+	{ where }: FocusSettings,
+): Promise<string> =>
 	isFetchable(source)
 		? await fetchCalendar(source)
-		: await readLocalFile(source, FOCUS_CALENDAR_ENV_VAR, "an iCalendar feed");
+		: await readLocalFile(source, where(CALENDAR_KEY), "an iCalendar feed");
 
 const parseJson = (contents: string, path: string): unknown => {
 	try {
@@ -161,17 +161,10 @@ const parseJson = (contents: string, path: string): unknown => {
 	}
 };
 
-const focusFilePath = (): string =>
-	process.env[FOCUS_FILE_ENV_VAR] ?? DEFAULT_FOCUS_FILE;
-
-// What was named as the calendar, if anything. An unset variable and one set to
-// nothing mean the same thing: no calendar, so the JSON file is what is left.
-const calendarSource = (): string => process.env[FOCUS_CALENDAR_ENV_VAR] ?? "";
-
-const loadJsonBlocks = async (): Promise<Focus[]> => {
-	const path = focusFilePath();
+const loadJsonBlocks = async (settings: FocusSettings): Promise<Focus[]> => {
+	const { file: path, where } = settings;
 	const parsed = parseJson(
-		await readLocalFile(path, FOCUS_FILE_ENV_VAR, "a focus schedule"),
+		await readLocalFile(path, where(FILE_KEY), "a focus schedule"),
 		path,
 	);
 
@@ -186,15 +179,19 @@ const loadJsonBlocks = async (): Promise<Focus[]> => {
 //
 // A calendar wins when one is named, because naming it is the deliberate act;
 // the JSON file is what you get by default and what you fall back to by
-// unsetting the calendar.
-const loadBlocks = async (): Promise<Focus[]> => {
-	const source = calendarSource();
+// taking the calendar back out of the config file.
+const loadBlocks = async (settings: FocusSettings): Promise<Focus[]> => {
+	const { calendar } = settings;
 
-	if (source === "") {
-		return await loadJsonBlocks();
+	if (calendar === undefined) {
+		return await loadJsonBlocks(settings);
 	}
 
-	return parseCalendar(await readCalendar(source), new Date(), source);
+	return parseCalendar(
+		await readCalendar(calendar, settings),
+		new Date(),
+		calendar,
+	);
 };
 
 // Written with tabs to match everything else here, and with the trailing
@@ -230,14 +227,13 @@ const asJson = (blocks: readonly Focus[]): string =>
 // reason to refuse to run -- but it is a reason to say so, since the file's
 // whole purpose is to be trusted when you look at it.
 const mirrorBlocks = async (
+	{ calendar, file: path }: FocusSettings,
 	blocks: readonly Focus[],
 	log: (message: string) => void,
 ): Promise<void> => {
-	if (calendarSource() === "") {
+	if (calendar === undefined) {
 		return;
 	}
-
-	const path = focusFilePath();
 
 	try {
 		// Written beside the file and moved over it, so that a process which
@@ -253,12 +249,4 @@ const mirrorBlocks = async (
 	}
 };
 
-export {
-	DEFAULT_FOCUS_FILE,
-	FOCUS_CALENDAR_ENV_VAR,
-	FOCUS_FILE_ENV_VAR,
-	drawableName,
-	isFetchable,
-	loadBlocks,
-	mirrorBlocks,
-};
+export { drawableName, isFetchable, loadBlocks, mirrorBlocks };

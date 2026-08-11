@@ -1,15 +1,15 @@
 // Facts about the hardware, shared by every program.
 //
-// Nothing here was chosen: it is the size of the displays, the way the
-// firmware arbitrates between applications, and where a bar answers. They sit
-// with the other measured values rather than anywhere that reads as settings,
-// because none of them is somebody's to set.
+// These are what the device is, not what anybody chose: the geometry of the
+// displays and how the firmware arbitrates between applications. What somebody
+// chose lives in the config file and is read through `src/config/`.
 //
 // The address is the fixed USB-Ethernet address of a BUSY Bar plugged into
-// this machine; it is printed on the back cover of the device. Reaching a bar
+// this machine; it is printed on the back cover of the device, so it differs
+// from one bar to the next and `device.address` overrides it. Reaching a bar
 // over Wi-Fi or the BUSY cloud proxy needs credentials as well, so that is
 // deliberately out of scope here.
-const DEVICE_ADDRESS = "10.0.4.20";
+const DEFAULT_DEVICE_ADDRESS = "10.0.4.20";
 
 // Draw priority a program gets unless it asks for another, in the range
 // [1, 100]. Built-in apps sit at 10, an active BUSY or CUSTOM work session at
@@ -49,8 +49,8 @@ const FRONT_DISPLAY_MIDDLE_X = 36;
 const FRONT_DISPLAY_MIDDLE_Y = 8;
 
 export {
+	DEFAULT_DEVICE_ADDRESS,
 	DEFAULT_DRAW_PRIORITY,
-	DEVICE_ADDRESS,
 	FRONT_DISPLAY_HEIGHT,
 	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_MIDDLE_Y,

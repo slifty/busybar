@@ -8,7 +8,7 @@
 // Run with `node tools/measure-fonts.ts`. Not part of the build.
 
 import { BusyBar } from "@busy-app/busy-lib";
-import { DEVICE_ADDRESS } from "../src/constants/device.ts";
+import { loadConfig } from "../src/config/index.ts";
 
 const WIDTH = 72;
 const HEIGHT = 16;
@@ -20,7 +20,8 @@ const FONTS = ["tiny", "small", "normal", "bold", "large"] as const;
 const FIRST_CODE = 0x20;
 const LAST_CODE = 0x7e;
 
-const bar = new BusyBar({ addr: DEVICE_ADDRESS });
+const { deviceAddress } = await loadConfig();
+const bar = new BusyBar({ addr: deviceAddress });
 
 const sleep = async (ms: number): Promise<void> =>
 	await new Promise((resolve) => setTimeout(resolve, ms));

@@ -12,6 +12,7 @@ import { fitText, maxLinesIn } from "../../text.ts";
 import { loadBlocks, mirrorBlocks } from "./blocks.ts";
 import { colorFor, nextPhaseChangeAt, phaseAt } from "./focus.ts";
 import { createSchedule } from "./schedule.ts";
+import { focusSettings } from "./settings.ts";
 import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 import type { Region } from "../../text.ts";
 import type { Focus } from "./focus.ts";
@@ -258,18 +259,25 @@ const drawFocus = async (
 // that file while a calendar is set, so this is for the person looking at it:
 // a schedule file left saying something the bar has not shown for weeks is the
 // first thing anyone would check and the last thing they should trust.
-const start = async ({ log }: ProgramContext): Promise<void> => {
-	await mirrorBlocks(await loadBlocks(), log);
+const start = async ({ config, log }: ProgramContext): Promise<void> => {
+	const settings = focusSettings(config);
+
+	await mirrorBlocks(settings, await loadBlocks(settings), log);
 };
 
 const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	const now = new Date();
 
+	// The settings are taken from the block again rather than held from
+	// `start`, which costs nothing -- the file was read once, at startup, and
+	// this is a handful of keys out of what it said.
+	const settings = focusSettings(context.config);
+
 	// Read afresh on every draw rather than resolved once at startup. The file
 	// belongs to whatever is filling it in -- a calendar sync, an editor -- and
 	// a schedule read only at startup would have this process showing
 	// yesterday's blocks for as long as it stayed up.
-	const schedule = createSchedule(await loadBlocks());
+	const schedule = createSchedule(await loadBlocks(settings));
 	const active = schedule.activeAt(now);
 
 	if (active !== undefined) {

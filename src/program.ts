@@ -1,8 +1,15 @@
 import type { BusyBar } from "@busy-app/busy-lib";
+import type { ConfigSection } from "./config/section.ts";
 
 // What a program is handed when it draws.
 interface ProgramContext {
 	readonly bar: BusyBar;
+	// This program's block of the config file, and the only thing it is
+	// configured by. A program reads its own settings -- nothing central knows
+	// what `focus` takes -- but it reads them from here rather than from the
+	// environment or a file of its own, so every setting in the tool is
+	// written in one place and validated the same way.
+	readonly config: ConfigSection;
 	// Elements on the device are namespaced by application name. Each program
 	// gets its own, so clearing one program's drawings leaves the rest alone.
 	readonly applicationName: string;
@@ -75,6 +82,11 @@ interface Program {
 	// that pass -- a focus session owns the screen, a request times out -- so
 	// the runner retries. Preparation fails because the program cannot do its
 	// job at all, and retrying that forever only buries the reason.
+	//
+	// A program with settings reads them here, even if it reads them again
+	// later. The runner holds the config block to the settings this asked for
+	// and refuses the rest, so a setting first read during a draw is a setting
+	// the file would be told it does not have.
 	readonly start?: (context: ProgramContext) => Promise<void>;
 	readonly draw: (context: ProgramContext) => Promise<DrawResult>;
 }

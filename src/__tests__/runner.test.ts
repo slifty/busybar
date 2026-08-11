@@ -5,6 +5,7 @@ import { DEFAULT_DRAW_PRIORITY } from "../constants/device.ts";
 import { describe as describeError } from "../errors.ts";
 import { delayFor } from "../runner.ts";
 import { createFakeBar } from "../test/bar.ts";
+import { configOf } from "../test/config.ts";
 import {
 	STUB_PROGRAM_NAME,
 	clearsOf,
@@ -12,6 +13,7 @@ import {
 	logsFrom,
 	programDraws,
 	settle,
+	startConfiguredRun,
 	startRun,
 	stopRun,
 	stubProgram,
@@ -462,6 +464,80 @@ describe("runPrograms, running one program", () => {
 			const thrown = await running.finished.catch((error: unknown) => error);
 
 			expect(describeError(thrown)).toBe("no program could start: no schedule");
+		});
+	});
+
+	// Nothing central knows what a program is configured by, so the runner is
+	// the only place that can hold the file to what the program actually read.
+	describe("the settings a program is given", () => {
+		// Reads its one setting the way a real program does: during
+		// preparation, whether or not it reads it again later.
+		const reader = (read: (value: string) => void): Program =>
+			stubProgram({
+				start: async (context) => {
+					read(context.config.string("greeting", "nothing"));
+
+					await Promise.resolve();
+				},
+			});
+
+		it("are the block written under that program's name", async () => {
+			const fake = createFakeBar();
+			const read = vi.fn<(value: string) => void>();
+			const running = startConfiguredRun(
+				fake,
+				configOf({ [STUB_PROGRAM_NAME]: { greeting: "hello" } }),
+				reader(read),
+			);
+
+			await settle();
+
+			expect(read).toHaveBeenCalledWith("hello");
+
+			await stopRun(running);
+		});
+
+		it("are empty for a program nobody configured", async () => {
+			const fake = createFakeBar();
+			const read = vi.fn<(value: string) => void>();
+			const running = startConfiguredRun(fake, configOf(), reader(read));
+
+			await settle();
+
+			expect(read).toHaveBeenCalledWith("nothing");
+
+			await stopRun(running);
+		});
+
+		// A misspelled setting that is quietly ignored is a line in the file
+		// that plainly says what the bar should do while doing nothing at all.
+		describe("when one of them is not a setting the program has", () => {
+			const misconfigured = (): ReturnType<typeof startConfiguredRun> =>
+				startConfiguredRun(
+					createFakeBar(),
+					configOf({ [STUB_PROGRAM_NAME]: { greetings: "hello" } }),
+					reader(() => {
+						// What it read does not matter here, only what it did not.
+					}),
+				);
+
+			it("stops that program, saying which setting it does not have", async () => {
+				const running = misconfigured();
+
+				await expect(running.finished).rejects.toThrow();
+
+				expect(logsFrom(running)).toContainEqual(
+					expect.stringMatching(/no setting called .*\.greetings/v),
+				);
+			});
+
+			it("treats it as a program that could not be prepared", async () => {
+				const running = misconfigured();
+
+				await expect(running.finished).rejects.toThrow(
+					/no program could start/v,
+				);
+			});
 		});
 	});
 });

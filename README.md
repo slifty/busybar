@@ -17,19 +17,28 @@ is what this project intends to build on.
 ## Connecting
 
 Everything here expects a BUSY Bar connected over USB. The device appears as a
-USB-Ethernet adapter at the fixed address `10.0.4.20` — printed on its back
-cover — and USB is treated as a trusted channel, so no token or password is
-involved. Wi-Fi and cloud access both need credentials and are not wired up.
+USB-Ethernet adapter at a fixed address — `10.0.4.20` unless `device.address`
+says otherwise, and printed on the back cover of the bar — and USB is treated
+as a trusted channel, so no token or password is involved. Wi-Fi and cloud
+access both need credentials and are not wired up.
 
 ## Programs
 
-A **program** is an operating mode — one thing the device is doing. Pick one,
-or several, with the `BUSYBAR_PROGRAM` environment variable:
+A **program** is an operating mode — one thing the device is doing. Which
+programs run is which of them are listed in the config file:
+
+```yaml
+programs:
+  focus:
+  random-emoji:
+```
+
+Naming programs on the command line runs those instead, for one run:
 
 ```bash
-npm run dev                              # runs the default
-BUSYBAR_PROGRAM=hello-world npm run dev
-BUSYBAR_PROGRAM=focus,random-emoji npm run dev
+npm run dev                       # runs what the file lists
+npm run dev -- hello-world
+npm run dev -- focus random-emoji
 ```
 
 | Program        | What it does                                             |
@@ -150,8 +159,7 @@ out.
 
 ## Random emoji
 
-`BUSYBAR_PROGRAM=random-emoji` shows a random emoji, changing every five
-seconds.
+The `random-emoji` program shows a random emoji, changing every five seconds.
 
 Emoji cannot be drawn as text: the bar's fonts are bitmap ASCII and the API
 rejects anything outside `^[\x20-\x7E]+$`. The firmware ships emoji as image
@@ -165,7 +173,7 @@ screen.
 
 ## Focus blocks
 
-`BUSYBAR_PROGRAM=focus` turns the bar into a view of the focus block you are
+The `focus` program turns the bar into a view of the focus block you are
 currently in: what you are doing on the left, and how long is left of it
 counting down on the right, inside a coloured frame. Between blocks the bar
 shows nothing and the built-in clock has the screen back.
@@ -212,12 +220,14 @@ source.
 
 #### From a calendar
 
-Point `BUSYBAR_FOCUS_CALENDAR` at an iCalendar feed, as either an `https` URL
+Point `programs.focus.calendar` at an iCalendar feed, as either an `https` URL
 or a path to an `.ics` file:
 
-```bash
-BUSYBAR_FOCUS_CALENDAR=https://calendar.google.com/calendar/ical/…/basic.ics
-BUSYBAR_FOCUS_CALENDAR=local/focus.ics
+```yaml
+programs:
+  focus:
+    calendar: https://calendar.google.com/calendar/ical/…/basic.ics
+    # calendar: local/focus.ics
 ```
 
 The two are told apart by parsing the value as a URL rather than by looking for
@@ -230,7 +240,8 @@ In Google Calendar both come from the settings page of the calendar itself:
 a zip with an `.ics` inside it. Prefer the URL. A downloaded file is a snapshot
 and goes stale the same way a hand-written schedule does, which is the whole
 problem a calendar is meant to solve. The secret address is a credential —
-anyone holding it can read the calendar — so it belongs in `.env`.
+anyone holding it can read the calendar — so it belongs in `local/config.yml`,
+which is git-ignored, rather than anywhere committed.
 
 One calendar is read, and every event in it is treated as a focus block. That
 is what makes a calendar kept for this purpose work and a general-purpose one
@@ -262,7 +273,7 @@ with no end describes infinitely many occurrences.
 #### From a file
 
 Without a calendar, blocks are read from a JSON file — `local/focus.json`, or
-wherever `BUSYBAR_FOCUS_FILE` points. `local/` is git-ignored wholesale, since a
+wherever `programs.focus.file` points. `local/` is git-ignored wholesale, since a
 schedule of what you are doing all day belongs to one machine rather than to the
 repository:
 
@@ -391,28 +402,59 @@ be a request every few seconds to redraw something that had not changed.
 
 ## Configuration
 
-Everything configurable is read from the environment. Node loads a `.env` file
-natively, so there is no `dotenv` dependency:
+Everything configurable lives in one file, `local/config.yml`:
 
 ```bash
-cp .env.example .env
+cp config.example.yml local/config.yml
 ```
 
-[`.env.example`](.env.example) lists every variable and its default, in a block
-per program — add a block there whenever a program gains a setting, so there is
-one place to discover what can be set. `.env` itself is git-ignored.
+```yaml
+device:
+  address: 10.0.4.20
 
-Running without a `.env` is fine. Every setting has a default, and the scripts
-use `--env-file-if-exists`, which carries on when the file is absent rather
-than failing the way plain `--env-file` does. It does print a one-line notice
-to stderr saying so.
+programs:
+  focus:
+    calendar: https://calendar.google.com/calendar/ical/…/basic.ics
+    file: local/focus.json
+  random-emoji:
+```
 
-A variable set in the environment beats the same variable in `.env`, so a
-one-off run needs no edit:
+A program runs because it is listed under `programs`, and is configured by what
+is written under it. Comment a block out to stop running it and its settings
+stay where you left them.
+
+[`config.example.yml`](config.example.yml) is committed and is the catalogue:
+every setting, with its default, in a block per program — add to it whenever a
+program gains a setting, so there is one place to discover what can be set. The
+copy in `local/` is git-ignored along with everything else in there, which is
+where a secret calendar address belongs.
+
+YAML rather than JSON because a setting is worth a sentence of explanation, and
+the sentence should live in the file you are editing rather than in a separate
+example you have to diff against. Reading it is the one dependency this adds.
+
+Running with no config file at all is fine. Every setting has a default, and
+the tool says which file it did not find on the way past.
+
+Two things are decided on the command line rather than in the file, because
+they cannot be in it:
 
 ```bash
-BUSYBAR_PROGRAM=focus npm run dev
+npm run dev -- focus                # run these programs, whatever the file lists
+npm run dev -- --config other.yml   # read settings from somewhere else
+npm run dev -- --help
 ```
+
+Settings are read once, at startup. What a program works _from_ is re-read as
+it goes — `focus` reads its schedule on every draw, because something else is
+writing it — but the configuration is the tool's own, and a setting that
+changed under a running process would leave the log describing a run that is no
+longer happening. Restart to change one.
+
+Unknown settings are refused rather than ignored: a program is held to the
+settings it read, so `calender` stops that program with a message naming what
+it should have said. A misspelling that was quietly accepted would be a line in
+the file that plainly says what the bar should do while doing nothing at all.
 
 ## Development
 

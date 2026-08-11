@@ -11,17 +11,18 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { TEST_CONFIG_FILE, sectionOf } from "../../../test/config.ts";
 import {
-	DEFAULT_FOCUS_FILE,
-	FOCUS_CALENDAR_ENV_VAR,
-	FOCUS_FILE_ENV_VAR,
 	drawableName,
 	isFetchable,
 	loadBlocks,
 	mirrorBlocks,
 } from "../blocks.ts";
+import { DEFAULT_FOCUS_FILE, focusSettings } from "../settings.ts";
 import { SINGLE_EVENT } from "./fixtures/calendars.ts";
 import { VALID_SCHEDULE } from "./fixtures/valid-schedule.ts";
+import type { Focus } from "../focus.ts";
+import type { FocusSettings } from "../settings.ts";
 
 // The loader is given a real file in a temporary directory rather than a mocked
 // `fs`. Reading a file is the whole job, so faking it would leave the part
@@ -33,9 +34,21 @@ afterAll(async () => {
 	await rm(directory, { recursive: true, force: true });
 });
 
-afterEach(() => {
-	vi.unstubAllEnvs();
+// What the program has been configured with, built up by the `given...`
+// helpers below and handed to the loader by `load`.
+let written: Record<string, unknown> = {};
+
+beforeEach(() => {
+	written = {};
 });
+
+const configure = (values: Record<string, unknown>): void => {
+	written = { ...written, ...values };
+};
+
+const settings = (): FocusSettings => focusSettings(sectionOf(written));
+
+const load = async (): Promise<Focus[]> => await loadBlocks(settings());
 
 // Writes a schedule file and points the loader at it, returning nothing so that
 // each test reads as "given this file, expect this".
@@ -43,7 +56,7 @@ const givenSchedule = async (contents: string): Promise<void> => {
 	const path = join(directory, `${String(Math.random()).slice(2)}.json`);
 
 	await writeFile(path, contents, "utf8");
-	vi.stubEnv(FOCUS_FILE_ENV_VAR, path);
+	configure({ file: path });
 };
 
 const givenScheduleOf = async (blocks: unknown): Promise<void> => {
@@ -77,7 +90,7 @@ describe("loadBlocks", () => {
 	it("reads a whole schedule", async () => {
 		await givenScheduleOf(VALID_SCHEDULE);
 
-		const blocks = await loadBlocks();
+		const blocks = await load();
 
 		expect(blocks).toHaveLength(2);
 		expect(blocks[0]?.name).toBe("Deep Work");
@@ -88,7 +101,7 @@ describe("loadBlocks", () => {
 	it("sanitises names on the way in, so nothing undrawable reaches the device", async () => {
 		await givenScheduleOf(VALID_SCHEDULE);
 
-		const blocks = await loadBlocks();
+		const blocks = await load();
 
 		expect(blocks[1]?.name).toBe("Focus: Q3 Roadmap");
 	});
@@ -96,7 +109,7 @@ describe("loadBlocks", () => {
 	it("accepts an empty schedule", async () => {
 		await givenScheduleOf([]);
 
-		await expect(loadBlocks()).resolves.toStrictEqual([]);
+		await expect(load()).resolves.toStrictEqual([]);
 	});
 
 	// The default is what you get by configuring nothing at all, so it is worth
@@ -107,10 +120,9 @@ describe("loadBlocks", () => {
 		// Somewhere without a `local/`, so the default resolves to something
 		// absent rather than to whatever this checkout happens to be carrying.
 		process.chdir(directory);
-		vi.stubEnv(FOCUS_FILE_ENV_VAR, undefined);
 
 		try {
-			await expect(loadBlocks()).rejects.toThrow(DEFAULT_FOCUS_FILE);
+			await expect(load()).rejects.toThrow(DEFAULT_FOCUS_FILE);
 		} finally {
 			process.chdir(cwd);
 		}
@@ -122,51 +134,51 @@ describe("loadBlocks", () => {
 			{ name: "a", start: "2026-01-01T09:00:00Z", end: "2026-01-01T10:00:00Z" },
 		]);
 
-		const blocks = await loadBlocks();
+		const blocks = await load();
 
 		expect(blocks.map(({ name }) => name)).toStrictEqual(["b", "a"]);
 	});
 
 	describe("refuses to start", () => {
-		it("when the file is missing", async () => {
-			vi.stubEnv(FOCUS_FILE_ENV_VAR, join(directory, "absent.json"));
-
-			await expect(loadBlocks()).rejects.toThrow(/could not read/v);
+		beforeEach(() => {
+			configure({ file: join(directory, "absent.json") });
 		});
 
-		it("naming the environment variable, so the fix is obvious", async () => {
-			vi.stubEnv(FOCUS_FILE_ENV_VAR, join(directory, "absent.json"));
+		it("when the file is missing", async () => {
+			await expect(load()).rejects.toThrow(/could not read/v);
+		});
 
-			await expect(loadBlocks()).rejects.toThrow(
-				new RegExp(FOCUS_FILE_ENV_VAR, "v"),
+		it("naming the setting to fix, and the file it is written in", async () => {
+			await expect(load()).rejects.toThrow(
+				new RegExp(`file in ${TEST_CONFIG_FILE}`, "v"),
 			);
 		});
 
 		it("keeping the underlying failure as the error's cause", async () => {
-			vi.stubEnv(FOCUS_FILE_ENV_VAR, join(directory, "absent.json"));
-
-			const error = await loadBlocks().catch((reason: unknown) => reason);
+			const error = await load().catch((reason: unknown) => reason);
 
 			expect(error).toBeInstanceOf(Error);
 			expect(error instanceof Error && error.cause !== undefined).toBe(true);
 		});
+	});
 
+	describe("refuses a schedule it cannot make sense of", () => {
 		it("when the file is not JSON", async () => {
 			await givenSchedule("{ not json");
 
-			await expect(loadBlocks()).rejects.toThrow(/is not valid JSON/v);
+			await expect(load()).rejects.toThrow(/is not valid JSON/v);
 		});
 
 		it("when the document is not an array", async () => {
 			await givenScheduleOf({ name: "Deep Work" });
 
-			await expect(loadBlocks()).rejects.toThrow(/must hold an array/v);
+			await expect(load()).rejects.toThrow(/must hold an array/v);
 		});
 
 		it("when a block is not an object", async () => {
 			await givenScheduleOf(["Deep Work"]);
 
-			await expect(loadBlocks()).rejects.toThrow(/expected an object/v);
+			await expect(load()).rejects.toThrow(/expected an object/v);
 		});
 
 		it.each(["name", "start", "end"])("when %s is missing", async (field) => {
@@ -181,7 +193,7 @@ describe("loadBlocks", () => {
 
 			await givenScheduleOf([partial]);
 
-			await expect(loadBlocks()).rejects.toThrow(
+			await expect(load()).rejects.toThrow(
 				new RegExp(`"${field}" must be a string`, "v"),
 			);
 		});
@@ -191,7 +203,7 @@ describe("loadBlocks", () => {
 				{ name: "Deep Work", start: "never", end: "2026-01-01T10:00:00Z" },
 			]);
 
-			await expect(loadBlocks()).rejects.toThrow(/"start" is not a date/v);
+			await expect(load()).rejects.toThrow(/"start" is not a date/v);
 		});
 
 		it("when a block ends before it starts", async () => {
@@ -203,9 +215,7 @@ describe("loadBlocks", () => {
 				},
 			]);
 
-			await expect(loadBlocks()).rejects.toThrow(
-				/"end" must be after "start"/v,
-			);
+			await expect(load()).rejects.toThrow(/"end" must be after "start"/v);
 		});
 
 		it("when a block ends exactly when it starts", async () => {
@@ -217,9 +227,7 @@ describe("loadBlocks", () => {
 				},
 			]);
 
-			await expect(loadBlocks()).rejects.toThrow(
-				/"end" must be after "start"/v,
-			);
+			await expect(load()).rejects.toThrow(/"end" must be after "start"/v);
 		});
 
 		it("when a name has nothing the display can render", async () => {
@@ -231,9 +239,7 @@ describe("loadBlocks", () => {
 				},
 			]);
 
-			await expect(loadBlocks()).rejects.toThrow(
-				/nothing the display can render/v,
-			);
+			await expect(load()).rejects.toThrow(/nothing the display can render/v);
 		});
 
 		it("saying which block is at fault", async () => {
@@ -251,7 +257,7 @@ describe("loadBlocks", () => {
 				{ name: "bad", start: "never", end: "2026-01-01T14:00:00Z" },
 			]);
 
-			await expect(loadBlocks()).rejects.toThrow(/block 2/v);
+			await expect(load()).rejects.toThrow(/block 2/v);
 		});
 	});
 });
@@ -295,13 +301,13 @@ describe("loadBlocks, from a calendar", () => {
 		const path = join(directory, `${String(Math.random()).slice(2)}.ics`);
 
 		await writeFile(path, contents, "utf8");
-		vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, path);
+		configure({ calendar: path });
 	};
 
 	// Only the response is faked. What is being pinned down is which of the two
 	// ways of reading a calendar gets used, and what happens to what comes back.
 	const givenCalendarUrl = (response: Response): void => {
-		vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, "https://example.test/basic.ics");
+		configure({ calendar: "https://example.test/basic.ics" });
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => await Promise.resolve(response)),
@@ -311,7 +317,7 @@ describe("loadBlocks, from a calendar", () => {
 	it("reads a calendar from a file path", async () => {
 		await givenCalendarFile(SINGLE_EVENT);
 
-		const blocks = await loadBlocks();
+		const blocks = await load();
 
 		expect(blocks).toHaveLength(1);
 		expect(blocks[0]?.name).toBe("Deep Work");
@@ -320,7 +326,7 @@ describe("loadBlocks, from a calendar", () => {
 	it("reads a calendar from an http URL", async () => {
 		givenCalendarUrl(new Response(SINGLE_EVENT));
 
-		const blocks = await loadBlocks();
+		const blocks = await load();
 
 		expect(blocks).toHaveLength(1);
 		expect(blocks[0]?.name).toBe("Deep Work");
@@ -331,39 +337,41 @@ describe("loadBlocks, from a calendar", () => {
 		await givenScheduleOf(VALID_SCHEDULE);
 		await givenCalendarFile(SINGLE_EVENT);
 
-		const blocks = await loadBlocks();
+		const blocks = await load();
 
 		expect(blocks.map(({ name }) => name)).toStrictEqual(["Deep Work"]);
 	});
 
-	it("falls back to the schedule file when the calendar is set to nothing", async () => {
+	// A setting left blank is a line somebody meant to fill in, not a request
+	// for an empty calendar.
+	it("falls back to the schedule file when the calendar is left blank", async () => {
 		await givenScheduleOf(VALID_SCHEDULE);
-		vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, "");
+		configure({ calendar: "" });
 
-		await expect(loadBlocks()).resolves.toHaveLength(2);
+		await expect(load()).resolves.toHaveLength(2);
 	});
 
 	describe("refuses to start", () => {
-		it("when the file is missing, naming the variable to set", async () => {
-			vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, join(directory, "absent.ics"));
+		it("when the file is missing, naming the setting to fix", async () => {
+			configure({ calendar: join(directory, "absent.ics") });
 
-			await expect(loadBlocks()).rejects.toThrow(
-				new RegExp(FOCUS_CALENDAR_ENV_VAR, "v"),
+			await expect(load()).rejects.toThrow(
+				new RegExp(`calendar in ${TEST_CONFIG_FILE}`, "v"),
 			);
 		});
 
 		// A calendar and a schedule file are read the same way and configured
 		// separately, so the message has to say which one it wanted.
 		it("saying it wanted a calendar rather than a schedule", async () => {
-			vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, join(directory, "absent.ics"));
+			configure({ calendar: join(directory, "absent.ics") });
 
-			await expect(loadBlocks()).rejects.toThrow(/an iCalendar feed/v);
+			await expect(load()).rejects.toThrow(/an iCalendar feed/v);
 		});
 
 		it("when the feed is not a calendar", async () => {
 			await givenCalendarFile("this is not a calendar");
 
-			await expect(loadBlocks()).rejects.toThrow(/not a valid iCalendar/v);
+			await expect(load()).rejects.toThrow(/not a valid iCalendar/v);
 		});
 
 		// A feed behind a sign-in answers 200 with a page, which would otherwise
@@ -371,23 +379,23 @@ describe("loadBlocks, from a calendar", () => {
 		it("when the URL answers with something that is not a calendar", async () => {
 			givenCalendarUrl(new Response("<html>sign in</html>"));
 
-			await expect(loadBlocks()).rejects.toThrow(/not a valid iCalendar/v);
+			await expect(load()).rejects.toThrow(/not a valid iCalendar/v);
 		});
 
 		it("when the URL answers with an error, saying what it answered", async () => {
 			givenCalendarUrl(new Response("nope", { status: 404 }));
 
-			await expect(loadBlocks()).rejects.toThrow(/answered 404/v);
+			await expect(load()).rejects.toThrow(/answered 404/v);
 		});
 
 		it("when the URL cannot be reached at all", async () => {
-			vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, "https://example.test/basic.ics");
+			configure({ calendar: "https://example.test/basic.ics" });
 			vi.stubGlobal(
 				"fetch",
 				vi.fn(async () => await Promise.reject(new Error("offline"))),
 			);
 
-			await expect(loadBlocks()).rejects.toThrow(/could not fetch/v);
+			await expect(load()).rejects.toThrow(/could not fetch/v);
 		});
 	});
 
@@ -403,16 +411,23 @@ describe("loadBlocks, from a calendar", () => {
 		const givenScheduleFileAt = (): string => {
 			const path = join(directory, `${String(Math.random()).slice(2)}.json`);
 
-			vi.stubEnv(FOCUS_FILE_ENV_VAR, path);
+			configure({ file: path });
 
 			return path;
+		};
+
+		const mirror = async (
+			blocks: readonly Focus[],
+			log: (message: string) => void = said,
+		): Promise<void> => {
+			await mirrorBlocks(settings(), blocks, log);
 		};
 
 		it("writes what the calendar said", async () => {
 			const path = givenScheduleFileAt();
 
 			await givenCalendarFile(SINGLE_EVENT);
-			await mirrorBlocks(await loadBlocks(), said);
+			await mirror(await load());
 
 			expect(await jsonAt(path)).toStrictEqual([
 				{
@@ -423,20 +438,19 @@ describe("loadBlocks, from a calendar", () => {
 			]);
 		});
 
-		// Which is the point: unsetting the calendar afterwards leaves a
+		// Which is the point: taking the calendar back out afterwards leaves a
 		// working schedule rather than whatever was there before.
 		it("writes a file the loader can read back", async () => {
 			const path = givenScheduleFileAt();
 
 			await givenCalendarFile(SINGLE_EVENT);
 
-			const fromCalendar = await loadBlocks();
+			const fromCalendar = await load();
 
-			await mirrorBlocks(fromCalendar, said);
-			vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, "");
-			vi.stubEnv(FOCUS_FILE_ENV_VAR, path);
+			await mirror(fromCalendar);
+			configure({ calendar: undefined, file: path });
 
-			await expect(loadBlocks()).resolves.toStrictEqual(fromCalendar);
+			await expect(load()).resolves.toStrictEqual(fromCalendar);
 		});
 
 		// Rewriting it from itself could only lose something -- the ordering,
@@ -445,9 +459,8 @@ describe("loadBlocks, from a calendar", () => {
 			const path = givenScheduleFileAt();
 
 			await writeFile(path, "the file as it was", "utf8");
-			vi.stubEnv(FOCUS_CALENDAR_ENV_VAR, "");
 
-			await mirrorBlocks([], said);
+			await mirror([]);
 
 			expect(await readFile(path, "utf8")).toBe("the file as it was");
 		});
@@ -458,12 +471,10 @@ describe("loadBlocks, from a calendar", () => {
 		it("reports a write it could not make rather than failing", async () => {
 			const log = vi.fn<(message: string) => void>();
 
-			vi.stubEnv(FOCUS_FILE_ENV_VAR, join(directory, "no", "such", "dir.json"));
+			configure({ file: join(directory, "no", "such", "dir.json") });
 			await givenCalendarFile(SINGLE_EVENT);
 
-			await expect(
-				mirrorBlocks(await loadBlocks(), log),
-			).resolves.toBeUndefined();
+			await expect(mirror(await load(), log)).resolves.toBeUndefined();
 
 			expect(log).toHaveBeenCalledWith(expect.stringMatching(/dir\.json/v));
 		});
@@ -473,7 +484,7 @@ describe("loadBlocks, from a calendar", () => {
 			const path = givenScheduleFileAt();
 
 			await givenCalendarFile(SINGLE_EVENT);
-			await mirrorBlocks(await loadBlocks(), said);
+			await mirror(await load());
 
 			await expect(readFile(`${path}.writing`, "utf8")).rejects.toThrow();
 		});
