@@ -1,9 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DRAW_PRIORITY } from "../config.ts";
-import { runProgram, delayFor } from "../runner.ts";
+import { DEFAULT_DRAW_PRIORITY } from "../config.ts";
+// The tool's own way of putting an error into words, so that this asserts the
+// line somebody would actually read rather than a message it half contains.
+import { describe as describeError } from "../errors.ts";
+import { delayFor } from "../runner.ts";
 import { createFakeBar } from "../test/bar.ts";
-import type { FakeBar } from "../test/bar.ts";
-import type { DrawResult, Program } from "../program.ts";
+import {
+	STUB_PROGRAM_NAME,
+	clearsOf,
+	errorDraws,
+	logsFrom,
+	programDraws,
+	settle,
+	startRun,
+	stopRun,
+	stubProgram,
+} from "../test/runner.ts";
+import type { Program } from "../program.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const RETRY_DELAY_MS = 5_000;
@@ -64,95 +77,7 @@ const preemption = (): Error =>
 
 const failure = (): Error => new Error("device said no");
 
-const PROGRAM_NAME = "test-program";
-const STUB_ELEMENT_ID = "stub";
-
-interface Running {
-	readonly logs: string[];
-	readonly finished: Promise<void>;
-}
-
-// A program that really draws, because half of what the runner does is decide
-// what is on screen and in what order. A stub that only returned a result
-// would leave every ordering question -- did the failure come down before the
-// retry? -- untestable.
-const stubProgram = (
-	onDraw: (attempt: number) => Promise<DrawResult> = async () =>
-		await Promise.resolve({}),
-	start?: Program["start"],
-): Program => {
-	let attempts = 0;
-
-	return {
-		name: PROGRAM_NAME,
-		description: "a program that exists to be run",
-		start,
-		draw: async ({ bar, applicationName }) => {
-			attempts += 1;
-
-			const result = await onDraw(attempts);
-
-			await bar.DisplayDraw({
-				application_name: applicationName,
-				priority: DRAW_PRIORITY,
-				elements: [
-					{
-						id: STUB_ELEMENT_ID,
-						type: "text",
-						text: "stub",
-						font: "tiny",
-						color: "#FFFFFFFF",
-						display: "front",
-						align: "center",
-						x: 0,
-						y: 0,
-						timeout: 0,
-					},
-				],
-			});
-
-			return result;
-		},
-	};
-};
-
-// Starts the runner without waiting for it: it runs until interrupted, so a
-// test drives it forward with the clock and then stops it.
-const run = (fake: FakeBar, program: Program): Running => {
-	const logs: string[] = [];
-
-	const finished = runProgram(fake.bar, program, (message) => {
-		logs.push(message);
-	});
-
-	return { logs, finished };
-};
-
-// Lets everything already scheduled settle, including the first draw.
-const settle = async (): Promise<void> => {
-	await vi.advanceTimersByTimeAsync(0);
-};
-
-const stop = async ({ finished }: Running): Promise<void> => {
-	process.emit("SIGINT");
-
-	await finished;
-};
-
-const drawsWith = ({ draws }: FakeBar, id: string): unknown[] =>
-	draws.filter(({ elements }) => elements.some((element) => element.id === id));
-
-const programDraws = (fake: FakeBar): unknown[] =>
-	drawsWith(fake, STUB_ELEMENT_ID);
-
-// A failure is drawn as one element per line, numbered, so what identifies it
-// is the prefix rather than any single id.
-const errorDraws = ({ draws }: FakeBar): unknown[] =>
-	draws.filter(({ elements }) =>
-		elements.some((element) => element.id.startsWith("error")),
-	);
-
-describe("runProgram", () => {
+describe("runPrograms, running one program", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 	});
@@ -163,13 +88,13 @@ describe("runProgram", () => {
 
 	it("draws as soon as it starts", async () => {
 		const fake = createFakeBar();
-		const running = run(fake, stubProgram());
+		const running = startRun(fake, stubProgram());
 
 		await settle();
 
 		expect(programDraws(fake)).toHaveLength(1);
 
-		await stop(running);
+		await stopRun(running);
 	});
 
 	// Elements outlive the process that drew them, so whatever is on screen at
@@ -177,21 +102,25 @@ describe("runProgram", () => {
 	// one left up deliberately.
 	it("clears the screen before its first draw", async () => {
 		const fake = createFakeBar();
-		const running = run(fake, stubProgram());
+		const running = startRun(fake, stubProgram());
 
 		await settle();
 
 		expect(fake.calls).toStrictEqual(["clear", "draw"]);
-		expect(fake.clears[0]).toStrictEqual({ application_name: PROGRAM_NAME });
+		expect(fake.clears[0]).toStrictEqual({
+			application_name: STUB_PROGRAM_NAME,
+		});
 
-		await stop(running);
+		await stopRun(running);
 	});
 
 	it("comes back when the program asked it to", async () => {
 		const fake = createFakeBar();
-		const running = run(
+		const running = startRun(
 			fake,
-			stubProgram(async () => await Promise.resolve({ nextDrawInMs: 1_000 })),
+			stubProgram({
+				onDraw: async () => await Promise.resolve({ nextDrawInMs: 1_000 }),
+			}),
 		);
 
 		await settle();
@@ -203,71 +132,128 @@ describe("runProgram", () => {
 
 		expect(programDraws(fake)).toHaveLength(2);
 
-		await stop(running);
+		await stopRun(running);
 	});
 
 	// The device sustains what was drawn, so there is nothing to come back for.
 	it("does not come back when the program asked for nothing", async () => {
 		const fake = createFakeBar();
-		const running = run(fake, stubProgram());
+		const running = startRun(fake, stubProgram());
 
 		await settle();
 		await vi.advanceTimersByTimeAsync(60_000 * 10);
 
 		expect(programDraws(fake)).toHaveLength(1);
 
-		await stop(running);
+		await stopRun(running);
 	});
 
 	it("clears what the program drew when it stops", async () => {
 		const fake = createFakeBar();
-		const running = run(fake, stubProgram());
+		const running = startRun(fake, stubProgram());
 
 		await settle();
-		await stop(running);
+		await stopRun(running);
 
 		expect(fake.clears.at(-1)).toStrictEqual({
-			application_name: PROGRAM_NAME,
+			application_name: STUB_PROGRAM_NAME,
 		});
-		expect(running.logs).toContain("display cleared");
+		expect(logsFrom(running)).toContain("display cleared");
+	});
+
+	// Every program reports through the same log, so a line that did not say
+	// which one it came from would be a line about no program in particular.
+	it("says which program each line of its log is about", async () => {
+		const fake = createFakeBar();
+		const running = startRun(fake, stubProgram());
+
+		await settle();
+		await stopRun(running);
+
+		expect(running.logs).toContain(`${STUB_PROGRAM_NAME}: display cleared`);
+	});
+
+	describe("the priority a program draws at", () => {
+		const interrupting = DEFAULT_DRAW_PRIORITY + 40;
+
+		it("is the default when the program does not ask for one", async () => {
+			const fake = createFakeBar();
+			const running = startRun(fake, stubProgram());
+
+			await settle();
+
+			expect(fake.draws[0]?.priority).toBe(DEFAULT_DRAW_PRIORITY);
+
+			await stopRun(running);
+		});
+
+		it("is what the program asked for when it asked", async () => {
+			const fake = createFakeBar();
+			const running = startRun(fake, stubProgram({ priority: interrupting }));
+
+			await settle();
+
+			expect(fake.draws[0]?.priority).toBe(interrupting);
+
+			await stopRun(running);
+		});
+
+		// Otherwise the failure of the program that interrupts the others would
+		// be the one failure they all draw over.
+		it("is also what its failure is drawn at", async () => {
+			const fake = createFakeBar();
+			const running = startRun(
+				fake,
+				stubProgram({
+					priority: interrupting,
+					onDraw: async () => await Promise.reject(failure()),
+				}),
+			);
+
+			await settle();
+
+			expect(fake.draws[0]?.priority).toBe(interrupting);
+
+			await stopRun(running);
+		});
 	});
 
 	describe("when a draw fails", () => {
 		const failing = (): Program =>
-			stubProgram(async () => await Promise.reject(failure()));
+			stubProgram({ onDraw: async () => await Promise.reject(failure()) });
 
 		it("says so, with the reason", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, failing());
+			const running = startRun(fake, failing());
 
 			await settle();
 
-			expect(running.logs).toContain("draw failed: device said no");
+			expect(logsFrom(running)).toContain("draw failed: device said no");
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		it("puts the failure on the bar", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, failing());
+			const running = startRun(fake, failing());
 
 			await settle();
 
 			expect(errorDraws(fake)).toHaveLength(1);
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		it("tries again on its own delay", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, failing());
+			const running = startRun(fake, failing());
 
 			await settle();
 			await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS);
 
 			expect(errorDraws(fake)).toHaveLength(2);
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		// The error is drawn under the program's own application name, and the
@@ -275,7 +261,7 @@ describe("runProgram", () => {
 		// the screen -- so an error left up is one the program cannot draw over.
 		it("takes the failure down before trying again", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, failing());
+			const running = startRun(fake, failing());
 
 			await settle();
 
@@ -285,30 +271,32 @@ describe("runProgram", () => {
 
 			expect(fake.calls[beforeRetry.length]).toBe("clear");
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		it("stops saying so once a draw works again", async () => {
 			const fake = createFakeBar();
-			const running = run(
+			const running = startRun(
 				fake,
-				stubProgram(async (attempt) => {
-					if (attempt === 1) {
-						throw failure();
-					}
+				stubProgram({
+					onDraw: async (attempt) => {
+						if (attempt === 1) {
+							throw failure();
+						}
 
-					return await Promise.resolve({});
+						return await Promise.resolve({});
+					},
 				}),
 			);
 
 			await settle();
 			await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS);
 
-			expect(running.logs).toContain("recovered");
+			expect(logsFrom(running)).toContain("recovered");
 			expect(errorDraws(fake)).toHaveLength(1);
 			expect(programDraws(fake)).toHaveLength(1);
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		// Reporting a failure must not become a second failure: the device being
@@ -318,17 +306,17 @@ describe("runProgram", () => {
 
 			fake.drawRejectsWith = failure();
 
-			const running = run(fake, stubProgram());
+			const running = startRun(fake, stubProgram());
 
 			await settle();
 
 			expect(
-				running.logs.some((line) =>
+				logsFrom(running).some((line) =>
 					line.startsWith("failed to show the failure"),
 				),
 			).toBe(true);
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		it("carries on when it cannot clear either", async () => {
@@ -336,15 +324,15 @@ describe("runProgram", () => {
 
 			fake.clearRejectsWith = failure();
 
-			const running = run(fake, stubProgram());
+			const running = startRun(fake, stubProgram());
 
 			await settle();
 
 			expect(
-				running.logs.some((line) => line.startsWith("failed to clear")),
+				logsFrom(running).some((line) => line.startsWith("failed to clear")),
 			).toBe(true);
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		// A drawing left behind outlives the process and blocks other
@@ -352,103 +340,128 @@ describe("runProgram", () => {
 		// it was not would bury the one line worth acting on.
 		it("does not claim the display was cleared when clearing failed", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, stubProgram());
+			const running = startRun(fake, stubProgram());
 
 			await settle();
 
 			fake.clearRejectsWith = failure();
 
-			await stop(running);
+			await stopRun(running);
 
-			expect(running.logs).not.toContain("display cleared");
+			expect(logsFrom(running)).not.toContain("display cleared");
 			expect(
-				running.logs.some((line) => line.startsWith("failed to clear")),
+				logsFrom(running).some((line) => line.startsWith("failed to clear")),
 			).toBe(true);
 		});
 	});
 
 	describe("when a higher-priority app owns the screen", () => {
 		const outranked = (): Program =>
-			stubProgram(async () => await Promise.reject(preemption()));
+			stubProgram({ onDraw: async () => await Promise.reject(preemption()) });
 
 		it("says so once rather than on every retry", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, outranked());
+			const running = startRun(fake, outranked());
 
 			await settle();
 			await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS * 3);
 
-			const said = running.logs.filter((line) =>
+			const said = logsFrom(running).filter((line) =>
 				line.includes("higher-priority app"),
 			);
 
 			expect(said).toHaveLength(1);
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		// Being outranked is the device working as intended, not a failure -- and
 		// the error could not be drawn over that app anyway.
 		it("draws no error for it", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, outranked());
+			const running = startRun(fake, outranked());
 
 			await settle();
 
 			expect(errorDraws(fake)).toHaveLength(0);
 
-			await stop(running);
+			await stopRun(running);
 		});
 
 		it("says when it has the screen back", async () => {
 			const fake = createFakeBar();
-			const running = run(
+			const running = startRun(
 				fake,
-				stubProgram(async (attempt) => {
-					if (attempt === 1) {
-						throw preemption();
-					}
+				stubProgram({
+					onDraw: async (attempt) => {
+						if (attempt === 1) {
+							throw preemption();
+						}
 
-					return await Promise.resolve({});
+						return await Promise.resolve({});
+					},
 				}),
 			);
 
 			await settle();
 			await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS);
 
-			expect(running.logs).toContain("regained the screen");
+			expect(logsFrom(running)).toContain("regained the screen");
 
-			await stop(running);
+			await stopRun(running);
 		});
 	});
 
 	describe("when preparation fails", () => {
 		const unpreparable = (): Program =>
-			stubProgram(
-				async () => await Promise.resolve({}),
-				async () => {
+			stubProgram({
+				start: async () => {
 					await Promise.reject(new Error("no schedule"));
 				},
-			);
+			});
 
-		it("stops the tool rather than retrying", async () => {
+		it("does not draw that program", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, unpreparable());
+			const running = startRun(fake, unpreparable());
 
-			await expect(running.finished).rejects.toThrow(/no schedule/v);
+			await expect(running.finished).rejects.toThrow();
+
 			expect(programDraws(fake)).toHaveLength(0);
 		});
 
-		// The process is about to exit, so nothing is coming to clear it. A tool
-		// that never started is exactly when the screen must not look ordinary.
-		it("leaves the failure on the bar on its way out", async () => {
+		it("says which program could not start, and why", async () => {
 			const fake = createFakeBar();
-			const running = run(fake, unpreparable());
+			const running = startRun(fake, unpreparable());
+
+			await expect(running.finished).rejects.toThrow();
+
+			expect(logsFrom(running)).toContain("could not start: no schedule");
+		});
+
+		// Nothing is coming back to clear it: this program will not run again,
+		// and a program that never started is exactly when the screen must not
+		// look ordinary.
+		it("leaves the failure on the bar", async () => {
+			const fake = createFakeBar();
+			const running = startRun(fake, unpreparable());
 
 			await expect(running.finished).rejects.toThrow();
 
 			expect(errorDraws(fake)).toHaveLength(1);
+			expect(clearsOf(fake, STUB_PROGRAM_NAME)).toHaveLength(1);
 			expect(fake.calls.at(-1)).toBe("draw");
+		});
+
+		// There is nothing left to interrupt and no reason to sit there looking
+		// alive -- and the reason leaves with the tool rather than staying in a
+		// log nobody is watching.
+		it("stops the tool when nothing else is running, saying why", async () => {
+			const fake = createFakeBar();
+			const running = startRun(fake, unpreparable());
+
+			const thrown = await running.finished.catch((error: unknown) => error);
+
+			expect(describeError(thrown)).toBe("no program could start: no schedule");
 		});
 	});
 });

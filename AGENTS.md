@@ -116,6 +116,11 @@ Configuration is environment variables, loaded from `.env` by Node itself —
   program carries that program's name too — `BUSYBAR_FOCUS_FILE`. Core settings
   are read in `src/config.ts`; a program's own settings are read inside that
   program's folder, never centrally.
+- **`BUSYBAR_PROGRAM` takes a comma-separated list**, resolved by
+  `resolvePrograms` in `src/programs/index.ts`. Whitespace around a name is
+  dropped, a blank value falls back to the default rather than running nothing,
+  and an unknown or repeated name rejects the whole list rather than running the
+  part that parsed.
 
 `.env.example` is committed and is the catalogue: one block per program, every
 variable with its default. `.gitignore` ignores `.env` and `.env.*` but
@@ -126,18 +131,19 @@ undiscoverable, so treat the two as one change.
 
 ```
 src/
-├── config.ts       # Device address, draw priority, display geometry
+├── config.ts       # Device address, default draw priority, display geometry
 ├── display.ts      # Shared display helpers (clear, preemption detection)
+├── errors.ts       # Turns a thrown thing into a line, causes and all
 ├── fonts.ts        # Measured font and countdown metrics
-├── index.ts        # Entry point: resolves the program, connects, hands off
+├── index.ts        # Entry point: resolves the programs, connects, hands off
 ├── program.ts      # The Program contract, including how a draw schedules the next
-├── runner.ts       # Runs a program until interrupted, then cleans up
+├── runner.ts       # Runs programs until interrupted, then cleans up
 ├── text.ts         # Fits a string into a region: picks a font, wraps, places
 ├── constants/
 │   └── time.ts         # Universal constants, not device- or program-specific
 ├── test/               # Test tooling: helpers and factories
 └── programs/
-    ├── index.ts        # Registry: name -> program
+    ├── index.ts        # Registry: name -> program, and what BUSYBAR_PROGRAM resolves to
     ├── focus/
     │   ├── blocks.ts   # Picks the source, reads it, mirrors a calendar to the file
     │   ├── calendar.ts # Turns an iCalendar feed into blocks
@@ -178,14 +184,39 @@ to be realistic in shape — a length, a descender, a word too long to break —
 keep the shape and change the words. The same applies to verifying anything
 that writes a file: point it at a scratch path, never at the configured one.
 
-The tool runs one **program** at a time — an operating mode — chosen by the
-`BUSYBAR_PROGRAM` environment variable and defaulting to `hello-world`.
+A **program** is an operating mode. The tool runs the ones named by the
+`BUSYBAR_PROGRAM` environment variable — one name, or several separated by
+commas — defaulting to `hello-world`.
 
 Core code sits at the root of `src/`; each program gets its own folder under
-`src/programs/`. A program declares a `name`, a `description`, and a `draw`
-function. The runner owns everything common: the first draw, waiting for the
-next one, tolerating HTTP 409 preemption, holding the event loop open, retrying
-after a failure, putting failures on the display, and clearing it on exit.
+`src/programs/`. A program declares a `name`, a `description`, an optional
+`priority`, and a `draw` function. The runner owns everything common: the first
+draw, waiting for the next one, tolerating HTTP 409 preemption, holding the
+event loop open, retrying after a failure, putting failures on the display, and
+clearing it on exit.
+
+**Programs run concurrently and are not coordinated.** Each has its own draw
+loop, schedule, application namespace, and log prefix, and none of them is told
+about the others. The only thing that decides which is on screen is
+`priority` — `DEFAULT_DRAW_PRIORITY` (50) unless a program declares its own —
+because the device gives the display to the highest priority asking for it and
+409s the rest. A program that outranks another therefore interrupts it for
+exactly as long as it keeps drawing, and the runner's retry on preemption is
+what hands the screen back afterwards. Equal priorities do not share: the
+incumbent application keeps the screen, so two ordinary programs run together
+leave the second preempted.
+
+`ProgramContext` carries the resolved `priority`, and every draw uses it —
+including `showError`. A program never imports the constant itself, so a
+failure is reported as loudly as the program speaks.
+
+**One program failing to start does not stop the others.** `start` failures are
+per-program: the reason is logged, the red `ERROR` goes on the bar under that
+program's name, and the rest carry on. That failure is deliberately never
+cleared — nothing is coming back to clear it — so an ordinary program's failure
+does hold the screen against its equal-priority peers, which is the intended
+direction. Only when nothing starts at all does the tool exit, carrying the
+first reason out with it.
 
 **Failure is drawn, not just logged.** The bar falls back to its clock whenever
 nothing is drawn over it, so a broken program and an idle one look the same.
@@ -206,8 +237,9 @@ something (see below). A draw that _fails_ is retried on the runner's own short
 delay instead, since the program never got to say what it wanted.
 
 **Preparation that can fail belongs in `start`.** A program may declare an
-optional `start`, run once before the first draw. Failing there is fatal and
-exits the tool with the reason, unlike a failed draw, which is retried — the
+optional `start`, run once before the first draw — all of them at once, so one
+program's slow calendar fetch does not hold up another's first draw. Failing
+there is fatal to that program, unlike a failed draw, which is retried — the
 distinction being that a draw fails for reasons that pass (a focus session owns
 the screen) whereas preparation fails because the program cannot work at all (a
 missing schedule file). `focus` uses it to validate its schedule, which it then
@@ -222,7 +254,7 @@ own account. The bar is for anything that stops the program working — throw,
 and the runner draws it — and the log is for what is worth knowing and not
 worth failing over, like a mirror file that could not be written.
 
-Two things to keep in mind when adding one:
+Three things to keep in mind when adding one:
 
 - **`name` doubles as the device-side application name**, so it has to match
   `^[a-zA-Z0-9._-]+$`. Elements are namespaced by it, which is what lets the
@@ -231,6 +263,10 @@ Two things to keep in mind when adding one:
   restarts animations, so a program whose output the device sustains on its own
   (a scroll, an animation, a countdown) should draw with `timeout: 0` and
   return `{}` rather than waking up to redraw the same thing.
+- **Leave `priority` alone unless the program exists to interrupt.** Raising it
+  takes the screen from everything below for as long as the program keeps
+  drawing, so it belongs to something brief and occasional. A program that is
+  always on and outranks the rest is a program that has replaced them.
 
 The structure will grow as the tool does. Update this section when it does.
 
@@ -475,6 +511,11 @@ are worth copying rather than reinventing:
   something cast to `BusyBar`. Only the methods a program actually calls exist,
   so reaching for anything else fails loudly instead of quietly doing nothing.
   Assert against the recorded elements rather than against HTTP.
+- **Drive the runner through `src/test/runner.ts`.** It provides a program that
+  really draws (`stubProgram`), a run that a test starts, advances, and stops,
+  and the queries for what each program drew, cleared, and logged. Two suites
+  use it — `runner.test.ts` for one program and `runner-programs.test.ts` for
+  several at once — which is why it is tooling rather than a fixture.
 - **Fake the clock, not the event loop.** Anything reading `new Date()` gets
   `vi.useFakeTimers({ toFake: ["Date"] })` and `vi.setSystemTime(...)`. Faking
   timers wholesale would stall the real file reads these suites await.

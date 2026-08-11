@@ -1,8 +1,4 @@
-import {
-	DRAW_PRIORITY,
-	FRONT_DISPLAY_HEIGHT,
-	FRONT_DISPLAY_WIDTH,
-} from "../../config.ts";
+import { FRONT_DISPLAY_HEIGHT, FRONT_DISPLAY_WIDTH } from "../../config.ts";
 import {
 	MS_PER_HOUR,
 	MS_PER_MINUTE,
@@ -169,7 +165,7 @@ const nextChangeAt = (block: Focus, now: Date): Date => {
 };
 
 const drawFocus = async (
-	{ bar, applicationName }: ProgramContext,
+	{ bar, applicationName, priority }: ProgramContext,
 	block: Focus,
 	now: Date,
 ): Promise<DrawResult> => {
@@ -194,7 +190,7 @@ const drawFocus = async (
 
 	await bar.DisplayDraw({
 		application_name: applicationName,
-		priority: DRAW_PRIORITY,
+		priority,
 		elements: [
 			{
 				id: BORDER_ELEMENT_ID,

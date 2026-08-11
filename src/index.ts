@@ -1,45 +1,21 @@
 // Entry point for the BUSY Bar tool.
 //
-// The bar runs one program at a time -- an operating mode, like a scrolling
-// greeting. This picks the program named by BUSYBAR_PROGRAM, connects to the
-// device, and hands over to the runner.
+// The bar runs the programs named by BUSYBAR_PROGRAM -- one operating mode,
+// like a scrolling greeting, or several at once. This resolves them, connects
+// to the device, and hands over to the runner.
 
 import { BusyBar } from "@busy-app/busy-lib";
 import { DEVICE_ADDRESS, PROGRAM_ENV_VAR } from "./config.ts";
-import {
-	DEFAULT_PROGRAM_NAME,
-	programNames,
-	resolveProgram,
-} from "./programs/index.ts";
-import { runProgram } from "./runner.ts";
+import { describe } from "./errors.ts";
+import { resolvePrograms } from "./programs/index.ts";
+import { runPrograms } from "./runner.ts";
 
 const log = (message: string): void => {
 	process.stdout.write(`busybar: ${message}\n`);
 };
 
-// Errors are reported with their causes appended, because the message that
-// explains what went wrong is usually the innermost one: "could not read
-// focus.json" is only useful next to the ENOENT that prompted it.
-const describe = (error: unknown): string => {
-	if (!(error instanceof Error)) {
-		return String(error);
-	}
-
-	return error.cause === undefined
-		? error.message
-		: `${error.message}: ${describe(error.cause)}`;
-};
-
 const main = async (): Promise<void> => {
-	const requested = process.env[PROGRAM_ENV_VAR] ?? DEFAULT_PROGRAM_NAME;
-	const program = resolveProgram(requested);
-
-	if (program === undefined) {
-		throw new Error(
-			`unknown program "${requested}". ` +
-				`Set ${PROGRAM_ENV_VAR} to one of: ${programNames().join(", ")}`,
-		);
-	}
+	const programs = resolvePrograms(process.env[PROGRAM_ENV_VAR]);
 
 	const bar = new BusyBar({ addr: DEVICE_ADDRESS });
 
@@ -48,9 +24,17 @@ const main = async (): Promise<void> => {
 	const { name } = await bar.SettingsNameGet();
 
 	log(`connected to "${name}" at ${DEVICE_ADDRESS}`);
-	log(`running "${program.name}" -- ${program.description}`);
 
-	await runProgram(bar, program, log);
+	// Said before any of them is prepared, so it describes what is being
+	// attempted rather than what is working. A program that cannot start says
+	// so itself a moment later, under its own name, and the ones that can carry
+	// on without it -- so a line claiming all of them were running would be
+	// wrong about exactly the case worth reading a log for.
+	for (const program of programs) {
+		log(`starting "${program.name}" -- ${program.description}`);
+	}
+
+	await runPrograms(bar, programs, log);
 };
 
 try {
