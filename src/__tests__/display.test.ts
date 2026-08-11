@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_DRAW_PRIORITY } from "../config.ts";
 import { clearApplication, isPreempted, showError } from "../display.ts";
 import { createFakeBar } from "../test/bar.ts";
 import type { BusyBar } from "@busy-app/busy-lib";
@@ -56,7 +57,7 @@ describe("showError", () => {
 	it("draws under the program's own application name", async () => {
 		const fake = createFakeBar();
 
-		await showError(fake.bar, PROGRAM_NAME);
+		await showError(fake.bar, PROGRAM_NAME, DEFAULT_DRAW_PRIORITY);
 
 		expect(fake.draws).toHaveLength(1);
 		expect(fake.draws[0]?.application_name).toBe(PROGRAM_NAME);
@@ -66,15 +67,27 @@ describe("showError", () => {
 	it("replaces what the program had on screen rather than landing on it", async () => {
 		const fake = createFakeBar();
 
-		await showError(fake.bar, PROGRAM_NAME);
+		await showError(fake.bar, PROGRAM_NAME, DEFAULT_DRAW_PRIORITY);
 
 		expect(fake.clears).toStrictEqual([{ application_name: PROGRAM_NAME }]);
+	});
+
+	// A program that outranks the others is one whose failure has to outrank
+	// them too: drawn at the default, the failure of the program that
+	// interrupts everything else would be the one failure nothing could see.
+	it("draws at the priority the failing program speaks at", async () => {
+		const fake = createFakeBar();
+		const interrupting = DEFAULT_DRAW_PRIORITY + 1;
+
+		await showError(fake.bar, PROGRAM_NAME, interrupting);
+
+		expect(fake.draws[0]?.priority).toBe(interrupting);
 	});
 
 	it("names the program that is failing", async () => {
 		const fake = createFakeBar();
 
-		await showError(fake.bar, PROGRAM_NAME);
+		await showError(fake.bar, PROGRAM_NAME, DEFAULT_DRAW_PRIORITY);
 
 		const text = (fake.draws[0]?.elements ?? []).find(isText);
 
@@ -86,7 +99,7 @@ describe("showError", () => {
 	it("stays up until something takes it down", async () => {
 		const fake = createFakeBar();
 
-		await showError(fake.bar, PROGRAM_NAME);
+		await showError(fake.bar, PROGRAM_NAME, DEFAULT_DRAW_PRIORITY);
 
 		for (const element of fake.draws[0]?.elements ?? []) {
 			expect(element.timeout).toBe(0);
@@ -97,7 +110,7 @@ describe("showError", () => {
 	it("draws in red", async () => {
 		const fake = createFakeBar();
 
-		await showError(fake.bar, PROGRAM_NAME);
+		await showError(fake.bar, PROGRAM_NAME, DEFAULT_DRAW_PRIORITY);
 
 		const text = (fake.draws[0]?.elements ?? []).find(isText);
 
@@ -109,7 +122,7 @@ describe("showError", () => {
 	it("sizes a long name down rather than scrolling it", async () => {
 		const fake = createFakeBar();
 
-		await showError(fake.bar, "random-emoji");
+		await showError(fake.bar, "random-emoji", DEFAULT_DRAW_PRIORITY);
 
 		const texts = (fake.draws[0]?.elements ?? []).filter(isText);
 
@@ -126,7 +139,7 @@ describe("showError", () => {
 	it("keeps the whole message, across lines if it has to", async () => {
 		const fake = createFakeBar();
 
-		await showError(fake.bar, "random-emoji");
+		await showError(fake.bar, "random-emoji", DEFAULT_DRAW_PRIORITY);
 
 		const drawn = (fake.draws[0]?.elements ?? [])
 			.filter(isText)

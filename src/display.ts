@@ -1,6 +1,5 @@
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import {
-	DRAW_PRIORITY,
 	FRONT_DISPLAY_HEIGHT,
 	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_WIDTH,
@@ -79,9 +78,15 @@ const NO_TIMEOUT = 0;
 // The cost is that a failed draw takes down whatever was up, including a
 // drawing that was still correct. That is the intended direction: a bar
 // showing the last thing that worked is the impression this exists to prevent.
+//
+// Drawn at the failing program's own priority rather than the default one, so
+// that a program which outranks the others is reported as loudly as it speaks:
+// at the default, a failure of the program that interrupts everything else
+// would be the one failure invisible behind them.
 const showError = async (
 	bar: BusyBar,
 	applicationName: string,
+	priority: number,
 ): Promise<void> => {
 	await clearApplication(bar, applicationName);
 
@@ -91,7 +96,7 @@ const showError = async (
 	// had and this one does not: the clear above has already taken them down.
 	await bar.DisplayDraw({
 		application_name: applicationName,
-		priority: DRAW_PRIORITY,
+		priority,
 		elements: fitted.lines.map(({ text, y }, index) => ({
 			id: `${ERROR_ELEMENT_ID}-${String(index)}`,
 			type: "text" as const,

@@ -1,5 +1,4 @@
 import {
-	DRAW_PRIORITY,
 	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_MIDDLE_Y,
 } from "../../config.ts";
@@ -26,10 +25,11 @@ const ELEMENT_TIMEOUT_SECONDS =
 const draw = async ({
 	bar,
 	applicationName,
+	priority,
 }: ProgramContext): Promise<DrawResult> => {
 	await bar.DisplayDraw({
 		application_name: applicationName,
-		priority: DRAW_PRIORITY,
+		priority,
 		elements: [
 			{
 				id: ELEMENT_ID,

@@ -23,12 +23,13 @@ involved. Wi-Fi and cloud access both need credentials and are not wired up.
 
 ## Programs
 
-The bar runs one **program** at a time — an operating mode, one thing the
-device is doing. Pick one with the `BUSYBAR_PROGRAM` environment variable:
+A **program** is an operating mode — one thing the device is doing. Pick one,
+or several, with the `BUSYBAR_PROGRAM` environment variable:
 
 ```bash
 npm run dev                              # runs the default
 BUSYBAR_PROGRAM=hello-world npm run dev
+BUSYBAR_PROGRAM=focus,random-emoji npm run dev
 ```
 
 | Program        | What it does                                             |
@@ -37,13 +38,44 @@ BUSYBAR_PROGRAM=hello-world npm run dev
 | `random-emoji` | Shows a random emoji, changing every five seconds        |
 | `focus`        | Shows the focus block you are in and the time left of it |
 
-An unknown name exits with the list of valid ones.
+An unknown name exits with the list of valid ones, and so does the same name
+asked for twice.
 
 Everything common to programs lives in the runner: connecting, drawing, waiting
 until a program wants to draw again, tolerating preemption, putting failures on
 the display, and clearing it on the way out. A program supplies a name, a
 description, and a `draw` function. Adding one means adding a folder under
 `src/programs/` and a single entry in `src/programs/index.ts`.
+
+### Running several at once
+
+Programs in a list run independently: none of them is told about the others,
+they do not take turns, and each keeps its own schedule. There is only one
+72×16 display between them, so what is actually on it at any moment is decided
+by **priority** — a number in `[1, 100]` that a program can declare and
+otherwise gets the default of 50.
+
+The device gives the screen to the highest priority asking for it and answers
+everyone else with a 409, which the runner treats as preemption: it says so
+once and keeps trying, so the moment the interrupting program stops drawing,
+the one underneath takes the screen back within a few seconds. That is the
+whole of the arbitration, and it means a raised priority is a claim worth
+making only for a program that speaks rarely and briefly — a meeting about to
+start — rather than one that is always on.
+
+Two consequences worth knowing before writing a list:
+
+- **Equal priorities do not share the screen.** The device settles a tie in
+  favour of whichever application is already drawing, so two ordinary programs
+  run together leave the second one preempted for as long as the first keeps
+  its elements up. Running `focus` and `random-emoji` together is a way to
+  watch that happen, not a way to see both.
+- **A program that cannot start does not stop the rest.** Its reason goes to
+  the log and its red `ERROR` goes on the bar, under its own name and at its
+  own priority, and the programs that did start carry on. The failure stays on
+  screen, which for an ordinary program means the survivors of equal priority
+  stay preempted behind it — a broken program is not quietly replaced by a
+  working one. If nothing at all starts, the tool exits with the reason.
 
 ### When something goes wrong
 
@@ -81,9 +113,9 @@ Three details follow from how the device arbitrates the screen:
 - **It comes down before each retry, not after one succeeds**, for the same
   reason.
 
-A failure during startup is left on screen deliberately. The process exits, so
-nothing is coming to clear it, and a tool that never started is precisely when
-the display must not look ordinary. The next run clears it.
+A failure during startup is left on screen deliberately. That program will not
+run again, so nothing is coming to clear it, and a program that never started
+is precisely when the display must not look ordinary. The next run clears it.
 
 Preemption is not a failure. An active BUSY or CUSTOM session outranking this
 tool is the device working as intended, so it is reported to the log and left

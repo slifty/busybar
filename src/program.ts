@@ -6,6 +6,11 @@ interface ProgramContext {
 	// Elements on the device are namespaced by application name. Each program
 	// gets its own, so clearing one program's drawings leaves the rest alone.
 	readonly applicationName: string;
+	// The priority every draw this program makes has to carry: what the program
+	// asked for, or the default if it asked for nothing. Handed over rather
+	// than imported so that a program draws at its own priority without having
+	// to know whether that is the default one.
+	readonly priority: number;
 	// The tool's own log, so that a program can report something that is worth
 	// knowing but not worth failing over -- and report it the same way the
 	// runner does, rather than writing to the terminal on its own account.
@@ -38,11 +43,31 @@ interface DrawResult {
 // preemption, and cleanup. That covers everything drawing-shaped. A program
 // that needs to react to button presses or device state will need this
 // contract to grow.
+//
+// Several can run at once, and they are not coordinated with each other:
+// each draws whenever it has something to say, and the device decides which
+// of them is actually on screen by comparing priorities. A program is
+// therefore written as though it owned the display, and has to tolerate not
+// getting it -- which is what the runner's retry on preemption is for.
 interface Program {
 	// Also used verbatim as the device-side application name, so it has to
 	// match ^[a-zA-Z0-9._-]+$.
 	readonly name: string;
 	readonly description: string;
+	// How far this program outranks the rest, in [1, 100]. Left off, it draws
+	// at DEFAULT_DRAW_PRIORITY like everything ordinary.
+	//
+	// This is the whole of the arbitration between programs running together:
+	// the device gives the screen to the highest priority asking for it, and
+	// answers everyone else 409 until that program stops drawing. Raising it is
+	// a claim that this program is worth interrupting the others for, and worth
+	// interrupting them for as long as it keeps drawing -- so it belongs to
+	// programs that speak up rarely and briefly, not to ones that are always
+	// on.
+	//
+	// Two programs at the same priority do not share the screen: the first to
+	// draw keeps it, and the other is preempted for as long as it is up.
+	readonly priority?: number;
 	// One-time preparation before the first draw: reading configuration,
 	// fetching a schedule, whatever the program cannot work without.
 	//

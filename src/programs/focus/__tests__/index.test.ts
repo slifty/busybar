@@ -11,6 +11,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { DEFAULT_DRAW_PRIORITY } from "../../../config.ts";
 import {
 	MS_PER_HOUR,
 	MS_PER_MINUTE,
@@ -109,6 +110,7 @@ const start = async (
 	const context = {
 		bar,
 		applicationName: focus.name,
+		priority: DEFAULT_DRAW_PRIORITY,
 		log: () => {
 			// Nothing here cares what the program had to say.
 		},

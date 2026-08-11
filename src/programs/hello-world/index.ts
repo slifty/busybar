@@ -1,8 +1,4 @@
-import {
-	DRAW_PRIORITY,
-	FRONT_DISPLAY_MIDDLE_Y,
-	FRONT_DISPLAY_WIDTH,
-} from "../../config.ts";
+import { FRONT_DISPLAY_MIDDLE_Y, FRONT_DISPLAY_WIDTH } from "../../config.ts";
 import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 
 const ELEMENT_ID = "greeting";
@@ -31,10 +27,11 @@ const NO_TIMEOUT = 0;
 const draw = async ({
 	bar,
 	applicationName,
+	priority,
 }: ProgramContext): Promise<DrawResult> => {
 	await bar.DisplayDraw({
 		application_name: applicationName,
-		priority: DRAW_PRIORITY,
+		priority,
 		elements: [
 			{
 				id: ELEMENT_ID,
