@@ -100,57 +100,92 @@ against `tsconfig.dev.json`.
 
 ## Configuration
 
-Configuration is environment variables, loaded from `.env` by Node itself —
-`npm run dev` and `npm start` pass `--env-file-if-exists=.env`. There is no
-`dotenv` dependency and there should not be one.
+Configuration is one YAML file, `local/config.yml`, read by `src/config/`.
+There are no environment variables, no `.env`, and no second place a setting
+can come from — that is the point of it, and adding one back would undo it.
 
-- **`--env-file-if-exists`, not `--env-file`.** The latter exits non-zero when
-  the file is missing, which would make a `.env` mandatory. Every setting has a
-  default, so it must not be.
-- **A variable already in the environment wins over `.env`.** That is what
-  makes `BUSYBAR_PROGRAM=focus npm run dev` work without editing anything.
-- **Tests never see `.env`.** Vitest does not load it into `process.env`, so a
-  developer's local settings cannot change what the suite does. Tests that care
-  about a variable set it themselves with `vi.stubEnv`.
-- **Every variable is prefixed `BUSYBAR_`**, and anything belonging to one
-  program carries that program's name too — `BUSYBAR_FOCUS_FILE`. Core settings
-  are read in `src/config.ts`; a program's own settings are read inside that
-  program's folder, never centrally.
-- **`BUSYBAR_PROGRAM` takes a comma-separated list**, resolved by
-  `resolvePrograms` in `src/programs/index.ts`. Whitespace around a name is
-  dropped, a blank value falls back to the default rather than running nothing,
-  and an unknown or repeated name rejects the whole list rather than running the
-  part that parsed.
+```yaml
+device:
+  address: 10.0.4.20
 
-`.env.example` is committed and is the catalogue: one block per program, every
-variable with its default. `.gitignore` ignores `.env` and `.env.*` but
-re-includes `.env.example`. Adding a setting without adding it there leaves it
-undiscoverable, so treat the two as one change.
+programs:
+  focus:
+    calendar: https://…/basic.ics
+    file: local/focus.json
+  random-emoji:
+```
+
+- **The `programs` block is both the run list and the settings.** A program
+  runs because it is listed there, and what is written under it is its block.
+  The names are resolved by `resolvePrograms` in `src/programs/index.ts`, where
+  an unknown or repeated name rejects the whole list rather than running the
+  part that parsed, and an empty list falls back to the default program rather
+  than running nothing.
+- **The command line decides only what the file cannot.** Programs named there
+  run instead of the listed ones for that run (`npm run dev -- focus`), and
+  `--config <file>` reads settings from somewhere else. See `src/cli.ts`.
+  Anything else worth setting is worth writing down where it can carry a
+  comment.
+- **Nothing is mandatory.** Every setting has a default and a missing file is
+  ordinary, so the tool runs with no configuration at all. A file named with
+  `--config` is the exception: asking for one by name and silently getting the
+  defaults would answer a question nobody asked.
+- **Read once, at startup.** What a program works _from_ is re-read as it goes
+  — `focus` reads its schedule on every draw, because something else writes it
+  — but the configuration is the tool's own and does not change under a running
+  process.
+- **A program reads its own settings, from `ProgramContext.config`.** Nothing
+  central knows what `focus` takes. They go in a `settings.ts` beside the
+  program, so "what can this be told to do?" is one file rather than a search.
+- **Read them in `start`.** The runner calls `done()` on the block once
+  preparation is over, which refuses any key the program did not read. A
+  setting first read during a draw is one the file would be told it does not
+  have.
+- **Every value goes through `ConfigSection`** (`src/config/section.ts`) rather
+  than being pulled out of a plain object: it carries where a value came from
+  into the message about it, treats a blank as absent, and is what remembers
+  which keys were read. `src/test/config.ts` builds one from a literal, which
+  is how a suite configures a program without a file.
+
+`config.example.yml` is committed at the root and is the catalogue: one block
+per program, every setting with its default and the prose explaining it. Adding
+a setting without adding it there leaves it undiscoverable, so treat the two as
+one change. `local/` is git-ignored wholesale, which is why the real file lives
+there — a secret calendar address is a credential.
+
+Facts about the hardware — the default address, the default draw priority, the
+display geometry — are not configuration and live in
+`src/constants/device.ts`.
 
 ## Project Structure
 
 ```
 src/
-├── config.ts       # Device address, default draw priority, display geometry
+├── cli.ts          # The command line: which config file, which programs
 ├── display.ts      # Shared display helpers (clear, preemption detection)
 ├── errors.ts       # Turns a thrown thing into a line, causes and all
 ├── fonts.ts        # Measured font and countdown metrics
-├── index.ts        # Entry point: resolves the programs, connects, hands off
+├── index.ts        # Entry point: reads settings, resolves the programs, hands off
 ├── program.ts      # The Program contract, including how a draw schedules the next
 ├── runner.ts       # Runs programs until interrupted, then cleans up
 ├── text.ts         # Fits a string into a region: picks a font, wraps, places
+├── config/
+│   ├── index.ts        # Reads local/config.yml into settings, once
+│   └── section.ts      # A block of it: typed reads, where they came from, what was never read
 ├── constants/
+│   ├── device.ts       # Default address, default draw priority, display geometry
 │   └── time.ts         # Universal constants, not device- or program-specific
 ├── test/               # Test tooling: helpers and factories
 └── programs/
-    ├── index.ts        # Registry: name -> program, and what BUSYBAR_PROGRAM resolves to
+    ├── index.ts        # Registry: name -> program, and what a list of names resolves to
     ├── focus/
     │   ├── blocks.ts   # Picks the source, reads it, mirrors a calendar to the file
     │   ├── calendar.ts # Turns an iCalendar feed into blocks
     │   ├── focus.ts    # A focus block, its phases, and their colours
     │   ├── index.ts    # Draws the active block and schedules the next draw
     │   ├── name.ts     # Drops what the bitmap fonts cannot draw
-    │   └── schedule.ts # Overlap resolution and block lookup
+    │   ├── schedule.ts # Overlap resolution and block lookup
+    │   └── settings.ts # What this program can be told to do
     ├── hello-world/
     │   └── index.ts    # Scrolling greeting
     └── random-emoji/
@@ -158,14 +193,17 @@ src/
         └── index.ts    # Picks one at random on a schedule
 ```
 
-`src/constants/` is for genuinely universal values (unit conversions and the
-like). Device facts belong in `src/config.ts`, except the measured font and
-countdown metrics, which are bulky enough to have `src/fonts.ts` to themselves;
-anything only one program cares about belongs in that program's folder.
+`src/constants/` is for values that were measured or given rather than decided:
+unit conversions in `time.ts`, facts about the hardware in `device.ts`. The
+measured font and countdown metrics belong to the same family but are bulky
+enough to have `src/fonts.ts` to themselves; anything only one program cares
+about belongs in that program's folder, and anything somebody chose belongs in
+the config file.
 
 `local/` is git-ignored wholesale and holds anything personal to one machine —
-`focus.json` today, and credentials or caches when a program needs them. Put
-runtime state there rather than adding a `.gitignore` entry per file.
+`config.yml` and `focus.json` today, and credentials or caches when a program
+needs them. Put runtime state there rather than adding a `.gitignore` entry per
+file.
 
 `tools/` is the opposite: committed scripts that talk to a device but are not
 part of the build, and are run by hand with `node tools/<name>.ts`. They are
@@ -184,9 +222,9 @@ to be realistic in shape — a length, a descender, a word too long to break —
 keep the shape and change the words. The same applies to verifying anything
 that writes a file: point it at a scratch path, never at the configured one.
 
-A **program** is an operating mode. The tool runs the ones named by the
-`BUSYBAR_PROGRAM` environment variable — one name, or several separated by
-commas — defaulting to `hello-world`.
+A **program** is an operating mode. The tool runs the ones listed under
+`programs` in the config file, or the ones named on the command line instead,
+defaulting to `hello-world` when neither says anything.
 
 Core code sits at the root of `src/`; each program gets its own folder under
 `src/programs/`. A program declares a `name`, a `description`, an optional
@@ -246,6 +284,11 @@ missing schedule file). `focus` uses it to validate its schedule, which it then
 re-reads on every draw rather than holding from startup — a file someone else
 writes has to be read when it is needed, not once. It also uses it to write
 that schedule back out when a calendar is what it read: see `mirrorBlocks`.
+
+It is also where a program reads its settings, whether or not it reads them
+again later: once `start` is over, the runner holds the program's block to the
+keys it asked for and refuses the rest, so a setting first read during a draw
+would be reported as one the program does not have.
 
 **A program can log, and should only do so for what it is carrying on from.**
 `ProgramContext` carries the runner's own `log`, so a program reports through
@@ -520,11 +563,11 @@ are worth copying rather than reinventing:
   `vi.useFakeTimers({ toFake: ["Date"] })` and `vi.setSystemTime(...)`. Faking
   timers wholesale would stall the real file reads these suites await.
 - **Prefer a real temporary file to a mocked `fs`.** `blocks.test.ts` writes
-  schedules into a `mkdtemp` directory and points `BUSYBAR_FOCUS_FILE` at them
-  with `vi.stubEnv`. Reading and validating a file is the entire job of that
-  module, so mocking the filesystem would leave the part worth testing
-  untested — and it lets the suite pin down the exact error message a mistyped
-  schedule produces.
+  schedules into a `mkdtemp` directory and points a settings block built by
+  `sectionOf` at them; the config suites do the same with real YAML files.
+  Reading and validating a file is the entire job of those modules, so mocking
+  the filesystem would leave the part worth testing untested — and it lets a
+  suite pin down the exact error message a mistyped schedule produces.
 
 Test the behaviour a caller depends on, not the shape of the implementation.
 The suites assert that a short block never reads as settled, that

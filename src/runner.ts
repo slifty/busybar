@@ -1,8 +1,9 @@
 import { once } from "node:events";
-import { DEFAULT_DRAW_PRIORITY } from "./config.ts";
+import { DEFAULT_DRAW_PRIORITY } from "./constants/device.ts";
 import { clearApplication, isPreempted, showError } from "./display.ts";
 import { describe } from "./errors.ts";
 import type { BusyBar } from "@busy-app/busy-lib";
+import type { Config } from "./config/index.ts";
 import type { Program, ProgramContext } from "./program.ts";
 
 // Node exits as soon as nothing is scheduled, and a registered signal handler
@@ -61,8 +62,8 @@ interface Running {
 //
 // Programs run alongside each other and report through the same log, so
 // without this "regained the screen" says nothing about who regained it. The
-// name is the one every other part of the tool already identifies a program by:
-// its application name on the device, and what BUSYBAR_PROGRAM asked for.
+// name is the one every other part of the tool already identifies a program
+// by: its application name on the device, and its block in the config file.
 const scopedLog =
 	(log: (message: string) => void, name: string) =>
 	(message: string): void => {
@@ -72,12 +73,14 @@ const scopedLog =
 const runningProgram = (
 	bar: BusyBar,
 	program: Program,
+	config: Config,
 	log: (message: string) => void,
 ): Running => ({
 	program,
 	context: {
 		bar,
 		applicationName: program.name,
+		config: config.forProgram(program.name),
 		// Resolved once, here, so that everything drawing on the program's
 		// behalf -- the program itself, and the runner's failure report --
 		// agrees about how loudly it speaks.
@@ -157,12 +160,20 @@ const showFailure = async ({
 // name and stays there, because a program that never started is precisely the
 // case where the screen must not look ordinary -- and nothing is coming back
 // later to clear it, since this program will not run again.
+//
+// A setting the program never read is a failure of the same kind, and is
+// checked here because this is the moment every program has read the ones it
+// does take. Nothing central knows what `focus` is configured by, so this is
+// the only place a misspelled setting can be caught -- and it has to be
+// caught, since the alternative is a line in the file that plainly says what
+// the bar should do and is silently doing nothing.
 const startProgram = async ({
 	program,
 	context,
 }: Running): Promise<Error | undefined> => {
 	try {
 		await program.start?.(context);
+		context.config.done();
 
 		return undefined;
 	} catch (error) {
@@ -294,9 +305,12 @@ const runProgram = async (
 const runPrograms = async (
 	bar: BusyBar,
 	programs: Program[],
+	config: Config,
 	log: (message: string) => void,
 ): Promise<void> => {
-	const entries = programs.map((program) => runningProgram(bar, program, log));
+	const entries = programs.map((program) =>
+		runningProgram(bar, program, config, log),
+	);
 
 	// Before anything is scheduled or drawn, and all at once rather than in
 	// turn: preparation reads files and fetches calendars, and one program's

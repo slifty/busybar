@@ -1,0 +1,65 @@
+# Copy to local/config.yml and edit. Everything here is optional -- what is
+# shown is what the tool does when a setting is left out.
+#
+#     cp config.example.yml local/config.yml
+#
+# `local/` is git-ignored wholesale, which is why the copy belongs there: a
+# schedule of what you are doing all day, and the secret calendar address it
+# comes from, are personal to one machine. This file is committed, and is the
+# catalogue -- add a block here whenever a program gains a setting, so there is
+# one place to discover what can be configured.
+#
+# Running with no config file at all is fine: every setting has a default, and
+# the bar scrolls a greeting.
+
+# ── The bar ───────────────────────────────────────────────────────────────────
+
+device:
+  # The USB-Ethernet address of the bar, printed on its back cover, so it
+  # differs from one device to the next. Reaching a bar over Wi-Fi or the BUSY
+  # cloud proxy needs credentials as well, which this tool does not do yet.
+  address: 10.0.4.20
+
+# ── The programs to run ───────────────────────────────────────────────────────
+#
+# A program runs because it is listed here, and is configured by what is
+# written under it. Comment a block out to stop running it, and its settings
+# stay where you left them for the next time.
+#
+# Several can run at once. Nothing coordinates them: each draws when it has
+# something to say, and the device gives the screen to whichever of them
+# outranks the rest. With nothing listed at all, the bar runs hello-world.
+#
+# `npm run dev -- focus` runs one program on its own for a single run, whatever
+# is listed here, using the settings written for it below.
+
+programs:
+  # Scrolls "Hello, World!" across the front display. Takes no settings.
+  hello-world:
+  # Shows a random emoji, changing every five seconds. Takes no settings.
+  # random-emoji:
+
+  # Shows the focus block you are in and how long is left of it.
+  # focus:
+  #   # An iCalendar feed to read focus blocks from -- either an https URL or a
+  #   # path to an .ics file. Left out, the schedule file below is read instead;
+  #   # writing one here puts it in charge.
+  #   #
+  #   # In Google Calendar both come from Settings for the calendar in question:
+  #   # "Secret address in iCal format" is the URL, and "Export calendar"
+  #   # downloads a zip with an .ics inside it. The URL keeps up with edits on
+  #   # its own; a downloaded file is a snapshot and goes stale, so prefer the
+  #   # URL unless you have a reason not to. Anyone holding the secret address
+  #   # can read the calendar, which is the other reason this file lives in
+  #   # `local/` rather than anywhere committed.
+  #   calendar: https://calendar.google.com/calendar/ical/…/basic.ics
+  #
+  #   # Where the schedule is read from when no calendar is set, relative to the
+  #   # working directory. Hand-written JSON -- the quickest way to try
+  #   # something without exporting anything.
+  #   #
+  #   # When a calendar IS set, this file is written rather than read: every
+  #   # start replaces it with what the calendar said, so opening it always
+  #   # answers "what is the bar working from?". Anything typed in it by hand is
+  #   # lost on the next start unless the calendar above is taken back out.
+  #   file: local/focus.json

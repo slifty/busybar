@@ -11,14 +11,14 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { DEFAULT_DRAW_PRIORITY } from "../../../config.ts";
+import { DEFAULT_DRAW_PRIORITY } from "../../../constants/device.ts";
 import {
 	MS_PER_HOUR,
 	MS_PER_MINUTE,
 	MS_PER_SECOND,
 } from "../../../constants/time.ts";
 import { createFakeBar } from "../../../test/bar.ts";
-import { FOCUS_FILE_ENV_VAR } from "../blocks.ts";
+import { sectionOf } from "../../../test/config.ts";
 import { colorFor } from "../focus.ts";
 import { IDLE_REFRESH_MS, focus } from "../index.ts";
 import type { BusyBar } from "@busy-app/busy-lib";
@@ -73,7 +73,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
-	vi.unstubAllEnvs();
 });
 
 // Named for what each block is testing rather than for a working day: a
@@ -104,13 +103,13 @@ const start = async (
 	path: string = scheduleFile(),
 ): Promise<ProgramContext> => {
 	await writeFile(path, JSON.stringify(blocks), "utf8");
-	vi.stubEnv(FOCUS_FILE_ENV_VAR, path);
 
 	const { bar } = createFakeBar();
 	const context = {
 		bar,
 		applicationName: focus.name,
 		priority: DEFAULT_DRAW_PRIORITY,
+		config: sectionOf({ file: path }),
 		log: () => {
 			// Nothing here cares what the program had to say.
 		},

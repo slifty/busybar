@@ -1,4 +1,7 @@
-import { FRONT_DISPLAY_MIDDLE_Y, FRONT_DISPLAY_WIDTH } from "../../config.ts";
+import {
+	FRONT_DISPLAY_MIDDLE_Y,
+	FRONT_DISPLAY_WIDTH,
+} from "../../constants/device.ts";
 import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 
 const ELEMENT_ID = "greeting";

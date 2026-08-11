@@ -1,6 +1,8 @@
 import { vi } from "vitest";
 import { runPrograms } from "../runner.ts";
+import { configOf } from "./config.ts";
 import type { FakeBar } from "./bar.ts";
+import type { Config } from "../config/index.ts";
 import type { DrawResult, Program } from "../program.ts";
 
 // The tooling two suites need to watch the runner work: a program that really
@@ -75,10 +77,20 @@ interface Run {
 
 // Starts the runner without waiting for it: it runs until interrupted, so a
 // test drives it forward with the clock and then stops it.
-const startRun = (fake: FakeBar, ...programs: Program[]): Run => {
+//
+// Programs get an empty block of settings unless a suite says otherwise, which
+// is what a program nobody has configured is handed for real.
+const startRun = (fake: FakeBar, ...programs: Program[]): Run =>
+	startConfiguredRun(fake, configOf(), ...programs);
+
+const startConfiguredRun = (
+	fake: FakeBar,
+	config: Config,
+	...programs: Program[]
+): Run => {
 	const logs: string[] = [];
 
-	const finished = runPrograms(fake.bar, programs, (message) => {
+	const finished = runPrograms(fake.bar, programs, config, (message) => {
 		logs.push(message);
 	});
 
@@ -136,6 +148,7 @@ export {
 	logsFrom,
 	programDraws,
 	settle,
+	startConfiguredRun,
 	startRun,
 	stopRun,
 	stubProgram,

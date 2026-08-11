@@ -9,7 +9,7 @@
 // Run with `node tools/measure-glyph-rows.ts`. Not part of the build.
 
 import { BusyBar } from "@busy-app/busy-lib";
-import { DEVICE_ADDRESS } from "../src/config.ts";
+import { loadConfig } from "../src/config/index.ts";
 
 const WIDTH = 72;
 const HEIGHT = 16;
@@ -26,7 +26,8 @@ const DRAW_Y = 3;
 const COLUMN = 14;
 const COLUMNS = 5;
 
-const bar = new BusyBar({ addr: DEVICE_ADDRESS });
+const { deviceAddress } = await loadConfig();
+const bar = new BusyBar({ addr: deviceAddress });
 
 const sleep = async (ms: number): Promise<void> =>
 	await new Promise((resolve) => setTimeout(resolve, ms));

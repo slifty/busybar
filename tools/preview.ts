@@ -14,8 +14,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BusyBar } from "@busy-app/busy-lib";
-import { DEVICE_ADDRESS } from "../src/config.ts";
+import { loadConfig } from "../src/config/index.ts";
+import { createSection } from "../src/config/section.ts";
 import { MS_PER_MINUTE } from "../src/constants/time.ts";
+import { DEFAULT_DRAW_PRIORITY } from "../src/constants/device.ts";
 import { focus } from "../src/programs/focus/index.ts";
 
 const WIDTH = 72;
@@ -25,7 +27,12 @@ const CHANNELS = 4;
 const directory = await mkdtemp(join(tmpdir(), "busybar-preview-"));
 const SCHEDULE_FILE = join(directory, "made-up-schedule.json");
 
-const bar = new BusyBar({ addr: DEVICE_ADDRESS });
+// The real config file is read -- it is where the address of the bar is -- but
+// the address is the only thing taken from it. What the program is told is
+// made up below, so a calendar configured for `focus` is parsed here and then
+// left alone rather than fetched.
+const { deviceAddress } = await loadConfig();
+const bar = new BusyBar({ addr: deviceAddress });
 
 const sleep = async (ms: number): Promise<void> =>
 	await new Promise((resolve) => setTimeout(resolve, ms));
@@ -123,15 +130,17 @@ const CASES: Array<[string, number, number]> = [
 	["TEST minutes", 8, 15],
 ];
 
-process.env["BUSYBAR_FOCUS_FILE"] = SCHEDULE_FILE;
-
-// Nothing personal is read: a calendar in the environment would otherwise win
-// over the made-up file below.
-delete process.env["BUSYBAR_FOCUS_CALENDAR"];
-
+// The program is handed a block of settings written here rather than the one
+// in the config file, which is what keeps this away from anything personal:
+// there is no calendar in it to read, and the schedule it names is the
+// temporary file the made-up blocks are written to.
 const context = {
 	bar,
 	applicationName: focus.name,
+	priority: DEFAULT_DRAW_PRIORITY,
+	config: createSection("tools/preview.ts", "programs.focus", {
+		file: SCHEDULE_FILE,
+	}),
 	log: (message: string): void => {
 		process.stdout.write(`${message}\n`);
 	},

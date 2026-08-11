@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DRAW_PRIORITY } from "../config.ts";
+import { DEFAULT_DRAW_PRIORITY } from "../constants/device.ts";
 import { clearApplication, isPreempted, showError } from "../display.ts";
 import { createFakeBar } from "../test/bar.ts";
 import type { BusyBar } from "@busy-app/busy-lib";

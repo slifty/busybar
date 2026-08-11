@@ -1,18 +1,15 @@
-// Core configuration, shared by every program.
+// Facts about the hardware, shared by every program.
+//
+// These are what the device is, not what anybody chose: the geometry of the
+// displays and how the firmware arbitrates between applications. What somebody
+// chose lives in the config file and is read through `src/config/`.
 //
 // The address is the fixed USB-Ethernet address of a BUSY Bar plugged into
-// this machine; it is printed on the back cover of the device. Reaching a bar
+// this machine; it is printed on the back cover of the device, so it differs
+// from one bar to the next and `device.address` overrides it. Reaching a bar
 // over Wi-Fi or the BUSY cloud proxy needs credentials as well, so that is
 // deliberately out of scope here.
-
-const DEVICE_ADDRESS = "10.0.4.20";
-
-// Environment variable naming the programs to run: one name, or several
-// separated by PROGRAM_SEPARATOR.
-const PROGRAM_ENV_VAR = "BUSYBAR_PROGRAM";
-
-// What separates one program's name from the next in that variable.
-const PROGRAM_SEPARATOR = ",";
+const DEFAULT_DEVICE_ADDRESS = "10.0.4.20";
 
 // Draw priority a program gets unless it asks for another, in the range
 // [1, 100]. Built-in apps sit at 10, an active BUSY or CUSTOM work session at
@@ -52,12 +49,10 @@ const FRONT_DISPLAY_MIDDLE_X = 36;
 const FRONT_DISPLAY_MIDDLE_Y = 8;
 
 export {
+	DEFAULT_DEVICE_ADDRESS,
 	DEFAULT_DRAW_PRIORITY,
-	DEVICE_ADDRESS,
 	FRONT_DISPLAY_HEIGHT,
 	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_MIDDLE_Y,
 	FRONT_DISPLAY_WIDTH,
-	PROGRAM_ENV_VAR,
-	PROGRAM_SEPARATOR,
 };
