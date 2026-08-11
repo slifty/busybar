@@ -179,6 +179,7 @@ src/
 └── programs/
     ├── index.ts        # Registry: name -> program, and what a list of names resolves to
     ├── focus/
+    │   ├── README.md   # What it draws and why, its schedule sources, its settings
     │   ├── blocks.ts   # Picks the source, reads it, mirrors a calendar to the file
     │   ├── calendar.ts # Turns an iCalendar feed into blocks
     │   ├── focus.ts    # A focus block, its phases, and their colours
@@ -187,8 +188,10 @@ src/
     │   ├── schedule.ts # Overlap resolution and block lookup
     │   └── settings.ts # What this program can be told to do
     ├── hello-world/
+    │   ├── README.md   # What it draws and why
     │   └── index.ts    # Scrolling greeting
     └── random-emoji/
+        ├── README.md   # What it draws and why
         ├── emoji.ts    # The firmware's built-in emoji sprites
         └── index.ts    # Picks one at random on a schedule
 ```
@@ -310,6 +313,15 @@ Three things to keep in mind when adding one:
   takes the screen from everything below for as long as the program keeps
   drawing, so it belongs to something brief and occasional. A program that is
   always on and outranks the rest is a program that has replaced them.
+
+**Each program documents itself in a `README.md` beside its code**, linked from
+the table in the root README: what it draws, why it draws it that way, and what
+it can be told to do. The root README keeps only what is common to all of them —
+the run list, priority arbitration, failure reporting — so prose about one
+program goes in that program's folder rather than being added there. A program's
+settings therefore have three homes and all three are one change: `settings.ts`
+reads them, `config.example.yml` catalogues them with their defaults, and the
+program's README explains them.
 
 The structure will grow as the tool does. Update this section when it does.
 
