@@ -11,7 +11,7 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { DEFAULT_DRAW_PRIORITY } from "../../../config.ts";
+import { DEFAULT_DRAW_PRIORITY } from "../../../constants/device.ts";
 import {
 	MS_PER_HOUR,
 	MS_PER_MINUTE,

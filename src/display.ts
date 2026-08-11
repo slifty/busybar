@@ -3,7 +3,7 @@ import {
 	FRONT_DISPLAY_HEIGHT,
 	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_WIDTH,
-} from "./config.ts";
+} from "./constants/device.ts";
 import { fitText } from "./text.ts";
 import type { BusyBar } from "@busy-app/busy-lib";
 

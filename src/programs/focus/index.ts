@@ -1,4 +1,7 @@
-import { FRONT_DISPLAY_HEIGHT, FRONT_DISPLAY_WIDTH } from "../../config.ts";
+import {
+	FRONT_DISPLAY_HEIGHT,
+	FRONT_DISPLAY_WIDTH,
+} from "../../constants/device.ts";
 import {
 	MS_PER_HOUR,
 	MS_PER_MINUTE,

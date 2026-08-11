@@ -5,7 +5,8 @@
 // to the device, and hands over to the runner.
 
 import { BusyBar } from "@busy-app/busy-lib";
-import { DEVICE_ADDRESS, PROGRAM_ENV_VAR } from "./config.ts";
+import { PROGRAM_ENV_VAR } from "./config.ts";
+import { DEVICE_ADDRESS } from "./constants/device.ts";
 import { describe } from "./errors.ts";
 import { resolvePrograms } from "./programs/index.ts";
 import { runPrograms } from "./runner.ts";

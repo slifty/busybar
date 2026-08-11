@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_DRAW_PRIORITY } from "../config.ts";
+import { DEFAULT_DRAW_PRIORITY } from "../constants/device.ts";
 // The tool's own way of putting an error into words, so that this asserts the
 // line somebody would actually read rather than a message it half contains.
 import { describe as describeError } from "../errors.ts";

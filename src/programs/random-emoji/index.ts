@@ -1,7 +1,7 @@
 import {
 	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_MIDDLE_Y,
-} from "../../config.ts";
+} from "../../constants/device.ts";
 import { MS_PER_SECOND } from "../../constants/time.ts";
 import { randomEmojiName, stockPathFor } from "./emoji.ts";
 import type { DrawResult, Program, ProgramContext } from "../../program.ts";

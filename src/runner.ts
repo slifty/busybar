@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { DEFAULT_DRAW_PRIORITY } from "./config.ts";
+import { DEFAULT_DRAW_PRIORITY } from "./constants/device.ts";
 import { clearApplication, isPreempted, showError } from "./display.ts";
 import { describe } from "./errors.ts";
 import type { BusyBar } from "@busy-app/busy-lib";

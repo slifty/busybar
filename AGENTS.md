@@ -116,6 +116,10 @@ Configuration is environment variables, loaded from `.env` by Node itself —
   program carries that program's name too — `BUSYBAR_FOCUS_FILE`. Core settings
   are read in `src/config.ts`; a program's own settings are read inside that
   program's folder, never centrally.
+- **A constant is not a setting.** The display geometry, the default draw
+  priority, and the address a bar answers on are facts about the hardware, and
+  live in `src/constants/device.ts` rather than anywhere that reads as
+  something to configure.
 - **`BUSYBAR_PROGRAM` takes a comma-separated list**, resolved by
   `resolvePrograms` in `src/programs/index.ts`. Whitespace around a name is
   dropped, a blank value falls back to the default rather than running nothing,
@@ -131,7 +135,7 @@ undiscoverable, so treat the two as one change.
 
 ```
 src/
-├── config.ts       # Device address, default draw priority, display geometry
+├── config.ts       # What the tool can be told to do: the BUSYBAR_PROGRAM variable
 ├── display.ts      # Shared display helpers (clear, preemption detection)
 ├── errors.ts       # Turns a thrown thing into a line, causes and all
 ├── fonts.ts        # Measured font and countdown metrics
@@ -140,6 +144,7 @@ src/
 ├── runner.ts       # Runs programs until interrupted, then cleans up
 ├── text.ts         # Fits a string into a region: picks a font, wraps, places
 ├── constants/
+│   ├── device.ts       # Device address, default draw priority, display geometry
 │   └── time.ts         # Universal constants, not device- or program-specific
 ├── test/               # Test tooling: helpers and factories
 └── programs/
@@ -158,10 +163,12 @@ src/
         └── index.ts    # Picks one at random on a schedule
 ```
 
-`src/constants/` is for genuinely universal values (unit conversions and the
-like). Device facts belong in `src/config.ts`, except the measured font and
-countdown metrics, which are bulky enough to have `src/fonts.ts` to themselves;
-anything only one program cares about belongs in that program's folder.
+`src/constants/` is for values that were measured or given rather than decided:
+unit conversions in `time.ts`, facts about the hardware in `device.ts`. The
+measured font and countdown metrics belong to the same family but are bulky
+enough to have `src/fonts.ts` to themselves; anything only one program cares
+about belongs in that program's folder, and anything somebody chose is
+configuration rather than a constant.
 
 `local/` is git-ignored wholesale and holds anything personal to one machine —
 `focus.json` today, and credentials or caches when a program needs them. Put

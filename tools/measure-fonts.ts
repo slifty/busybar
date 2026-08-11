@@ -8,7 +8,7 @@
 // Run with `node tools/measure-fonts.ts`. Not part of the build.
 
 import { BusyBar } from "@busy-app/busy-lib";
-import { DEVICE_ADDRESS } from "../src/config.ts";
+import { DEVICE_ADDRESS } from "../src/constants/device.ts";
 
 const WIDTH = 72;
 const HEIGHT = 16;

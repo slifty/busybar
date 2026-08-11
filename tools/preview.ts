@@ -14,7 +14,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BusyBar } from "@busy-app/busy-lib";
-import { DEVICE_ADDRESS } from "../src/config.ts";
+import { DEVICE_ADDRESS } from "../src/constants/device.ts";
 import { MS_PER_MINUTE } from "../src/constants/time.ts";
 import { focus } from "../src/programs/focus/index.ts";
 
