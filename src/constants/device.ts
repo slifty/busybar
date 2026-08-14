@@ -42,6 +42,15 @@ const DEFAULT_DEVICE_ADDRESS = "10.0.4.20";
 // itself, and would lose.
 const DEFAULT_DRAW_PRIORITY = 50;
 
+// What an active BUSY or CUSTOM work session draws at.
+//
+// The firmware's own focus mode, and the highest thing this tool will meet in
+// practice. It is here rather than in the one program that cares because it is
+// a fact about the device: a program deciding to outrank a focus session has
+// to know what a focus session is, and guessing 91 in the program would leave
+// the reason for the number somewhere other than the number.
+const BUSY_SESSION_PRIORITY = 90;
+
 // The front display is 72x16. The back display is 160x80 and unused so far.
 const FRONT_DISPLAY_WIDTH = 72;
 const FRONT_DISPLAY_HEIGHT = 16;
@@ -49,6 +58,7 @@ const FRONT_DISPLAY_MIDDLE_X = 36;
 const FRONT_DISPLAY_MIDDLE_Y = 8;
 
 export {
+	BUSY_SESSION_PRIORITY,
 	DEFAULT_DEVICE_ADDRESS,
 	DEFAULT_DRAW_PRIORITY,
 	FRONT_DISPLAY_HEIGHT,

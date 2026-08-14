@@ -1,3 +1,4 @@
+import { event } from "./event/index.ts";
 import { focus } from "./focus/index.ts";
 import { helloWorld } from "./hello-world/index.ts";
 import { randomEmoji } from "./random-emoji/index.ts";
@@ -7,6 +8,7 @@ import type { Program } from "../program.ts";
 // under `programs` in the config file. Adding a program means adding a folder
 // beside this file and one entry here.
 const PROGRAMS = {
+	[event.name]: event,
 	[focus.name]: focus,
 	[helloWorld.name]: helloWorld,
 	[randomEmoji.name]: randomEmoji,
