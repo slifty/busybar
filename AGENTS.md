@@ -168,23 +168,34 @@ src/
 ├── index.ts        # Entry point: reads settings, resolves the programs, hands off
 ├── program.ts      # The Program contract, including how a draw schedules the next
 ├── runner.ts       # Runs programs until interrupted, then cleans up
-├── text.ts         # Fits a string into a region: picks a font, wraps, places
+├── text.ts         # Fits a string into a region: picks a font, wraps, places; drops what the fonts cannot draw
+├── calendar/
+│   ├── occurrence.ts   # What reading a calendar yields, before any program decides what to make of it
+│   ├── parse.ts        # iCalendar -> occurrences: recurrence, overrides, timezones, cancellation
+│   └── source.ts       # Reads a configured source, whether URL or path
 ├── config/
 │   ├── index.ts        # Reads local/config.yml into settings, once
 │   └── section.ts      # A block of it: typed reads, where they came from, what was never read
 ├── constants/
-│   ├── device.ts       # Default address, default draw priority, display geometry
+│   ├── device.ts       # Default address, draw priorities, display geometry
 │   └── time.ts         # Universal constants, not device- or program-specific
 ├── test/               # Test tooling: helpers and factories
 └── programs/
     ├── index.ts        # Registry: name -> program, and what a list of names resolves to
+    ├── event/
+    │   ├── README.md        # What it draws and why, its leads, its settings
+    │   ├── alerts.ts        # Which alert owns the screen, and when to think again
+    │   ├── appointment.ts   # An appointment, its kind, and how much warning each kind gets
+    │   ├── appointments.ts  # Reads every configured calendar and pools them
+    │   ├── calendar.ts      # Turns occurrences into appointments
+    │   ├── index.ts         # Draws the alert and schedules the next draw
+    │   └── settings.ts      # What this program can be told to do
     ├── focus/
     │   ├── README.md   # What it draws and why, its schedule sources, its settings
     │   ├── blocks.ts   # Picks the source, reads it, mirrors a calendar to the file
-    │   ├── calendar.ts # Turns an iCalendar feed into blocks
+    │   ├── calendar.ts # Turns occurrences into focus blocks
     │   ├── focus.ts    # A focus block, its phases, and their colours
     │   ├── index.ts    # Draws the active block and schedules the next draw
-    │   ├── name.ts     # Drops what the bitmap fonts cannot draw
     │   ├── schedule.ts # Overlap resolution and block lookup
     │   └── settings.ts # What this program can be told to do
     ├── hello-world/
@@ -195,6 +206,16 @@ src/
         ├── emoji.ts    # The firmware's built-in emoji sprites
         └── index.ts    # Picks one at random on a schedule
 ```
+
+`src/calendar/` reads iCalendar and stops there. Expanding recurrence, applying
+the edits made to individual occurrences, resolving the timezones a feed carries
+with it, and dropping what the calendar says is cancelled are the same work for
+every program, and it is far too much to have twice. What an occurrence is _for_
+is not shared: `focus` and `event` each map occurrences to their own type and
+disagree about what to keep — an entry with no duration is nothing to count down
+and a perfectly good appointment to be on time for — so the drop rules live with
+the program, never in the reader. A third program reading calendars should add a
+mapper, not a parser.
 
 `src/constants/` is for values that were measured or given rather than decided:
 unit conversions in `time.ts`, facts about the hardware in `device.ts`. The
@@ -211,7 +232,11 @@ file.
 `tools/` is the opposite: committed scripts that talk to a device but are not
 part of the build, and are run by hand with `node tools/<name>.ts`. They are
 what regenerates the tables in `src/fonts.ts` and what shows a layout without
-waiting for the schedule to reach an interesting moment. ESLint only covers
+waiting for the schedule to reach an interesting moment — `preview.ts` for
+`focus` and `preview-event.ts` for `event`. Both clear the display before each
+case, so a case that draws nothing comes back blank rather than showing the
+previous one's frame; a stale capture that reads as a fresh one defeats the
+whole point of printing the pixels. ESLint only covers
 `src/`, so these are held to Prettier and nothing else.
 
 **Invented data never goes in `local/`, and never wears a real name.** A

@@ -23,6 +23,16 @@ interface ConfigSection {
 	// Text, where being absent means something other than "use the default" --
 	// no calendar at all, rather than a particular one.
 	readonly optionalString: (key: string) => string | undefined;
+	// Several values, written as a YAML list. Absent is an empty list rather
+	// than an error, so a setting nobody has written reads as one nothing was
+	// asked of.
+	//
+	// A list rather than a block of named entries because the names would have
+	// to be unique and would mean nothing: YAML rejects a repeated key, so
+	// naming calendars would cap you at one `work` and one `personal` while
+	// buying no behaviour in return. A list takes as many as you have, and a
+	// comment groups them for the reader.
+	readonly strings: (key: string) => string[];
 	// A block nested inside this one. Absent is empty rather than an error, so
 	// a block nobody has written reads as one where nothing was set.
 	readonly section: (key: string) => ConfigSection;
@@ -104,9 +114,45 @@ const createSection = (
 		return trimmed === BLANK ? undefined : trimmed;
 	};
 
+	// A list of text, with the half-written entries left out.
+	//
+	// A blank entry is dropped rather than refused, for the same reason a blank
+	// setting falls back: `- ` with nothing after it is a line somebody meant
+	// to come back and fill in, not a request for an empty calendar. An entry
+	// that holds something other than text is a different matter and is
+	// refused, naming the position so there is somewhere to go and look.
+	const asStrings = (key: string): string[] => {
+		const found = at(key);
+
+		if (found === undefined || found === null) {
+			return [];
+		}
+
+		if (!Array.isArray(found)) {
+			throw new Error(`${file}: ${qualify(key)} must be a list`);
+		}
+
+		return found
+			.map((entry: unknown, index) => {
+				if (entry === undefined || entry === null) {
+					return BLANK;
+				}
+
+				if (typeof entry !== "string") {
+					throw new Error(
+						`${file}: ${qualify(key)}[${String(index)}] must be text`,
+					);
+				}
+
+				return entry.trim();
+			})
+			.filter((entry) => entry !== BLANK);
+	};
+
 	return {
 		string: (key, fallback) => asString(key) ?? fallback,
 		optionalString: asString,
+		strings: asStrings,
 		section: (key) => createSection(file, qualify(key), at(key)),
 		names: () => {
 			const keys = Object.keys(values);

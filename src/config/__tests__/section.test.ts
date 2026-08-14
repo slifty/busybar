@@ -69,6 +69,79 @@ describe("optionalString", () => {
 	});
 });
 
+describe("strings", () => {
+	it("reads a list of text", () => {
+		expect(
+			sectionOf({ calendars: ["one.ics", "two.ics"] }).strings("calendars"),
+		).toStrictEqual(["one.ics", "two.ics"]);
+	});
+
+	// A setting nobody has written is one nothing was asked of, not an error.
+	it("reads an absent setting as an empty list", () => {
+		expect(sectionOf({}).strings("calendars")).toStrictEqual([]);
+	});
+
+	// YAML reads a key with nothing after it as null, which is the same
+	// nothing as a key that was never written.
+	it("reads a setting with nothing after it as an empty list", () => {
+		expect(sectionOf({ calendars: null }).strings("calendars")).toStrictEqual(
+			[],
+		);
+	});
+
+	it("takes as many as were written, since that is the whole point of a list", () => {
+		const many = Array.from({ length: 12 }, (_unused, index) => `${index}.ics`);
+
+		expect(sectionOf({ calendars: many }).strings("calendars")).toHaveLength(
+			12,
+		);
+	});
+
+	it("trims what was written, since a trailing space is never meant", () => {
+		expect(
+			sectionOf({ calendars: [" one.ics "] }).strings("calendars"),
+		).toStrictEqual(["one.ics"]);
+	});
+
+	// `- ` with nothing after it is a line somebody meant to come back and
+	// fill in, not a request for an empty calendar.
+	it.each([
+		["nothing after it", null],
+		["an empty value", ""],
+		["nothing but spaces", "   "],
+	])("leaves out an entry with %s", (_label, blank) => {
+		expect(
+			sectionOf({ calendars: ["one.ics", blank] }).strings("calendars"),
+		).toStrictEqual(["one.ics"]);
+	});
+
+	// A single value is refused rather than read as a list of one. The
+	// message names the setting, which is the whole of what is worth knowing.
+	it("refuses a setting that is not a list, naming it", () => {
+		expect(() =>
+			sectionOf({ calendars: "one.ics" }).strings("calendars"),
+		).toThrow(/programs\.focus\.calendars must be a list/v);
+	});
+
+	// An entry that is not text is a different matter from a blank one, and
+	// the position is what makes it findable in a long list.
+	it("refuses an entry that is not text, naming its position", () => {
+		expect(() =>
+			sectionOf({ calendars: ["one.ics", 42] }).strings("calendars"),
+		).toThrow(/programs\.focus\.calendars\[1\] must be text/v);
+	});
+
+	it("counts the setting as read", () => {
+		const section = sectionOf({ calendars: ["one.ics"] });
+
+		section.strings("calendars");
+
+		expect(() => {
+			section.done();
+		}).not.toThrow();
+	});
+});
+
 describe("section", () => {
 	it("reads a block nested inside another", () => {
 		const root = rootOf({ device: { address: "10.0.0.1" } });

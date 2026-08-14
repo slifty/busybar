@@ -46,6 +46,7 @@ npm run dev -- focus random-emoji
 | [`hello-world`](src/programs/hello-world/README.md)   | Scrolls "Hello, World!" across the front display         |
 | [`random-emoji`](src/programs/random-emoji/README.md) | Shows a random emoji, changing every five seconds        |
 | [`focus`](src/programs/focus/README.md)               | Shows the focus block you are in and the time left of it |
+| [`event`](src/programs/event/README.md)               | Interrupts you before an appointment starts              |
 
 Each program documents itself in a `README.md` beside its code, which is where
 its settings and the reasoning behind what it draws live.
@@ -75,6 +76,12 @@ the one underneath takes the screen back within a few seconds. That is the
 whole of the arbitration, and it means a raised priority is a claim worth
 making only for a program that speaks rarely and briefly — a meeting about to
 start — rather than one that is always on.
+
+`event` is the one program that makes that claim. It draws at 91, one above an
+active BUSY or CUSTOM session, so an appointment alert interrupts everything
+including a focus session you started — for the five or thirty minutes it is up,
+and not a moment longer, since the alert expires on its own when the
+appointment begins. Running it alongside `focus` is what it is for.
 
 Two consequences worth knowing before writing a list:
 

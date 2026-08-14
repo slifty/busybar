@@ -6,7 +6,7 @@ import {
 	inkBoxOf,
 	widthOf,
 } from "../fonts.ts";
-import { fitText, maxLinesIn } from "../text.ts";
+import { drawableName, fitText, maxLinesIn } from "../text.ts";
 import type { Font } from "../fonts.ts";
 import type { FittedText, Region } from "../text.ts";
 
@@ -214,5 +214,28 @@ describe("maxLinesIn", () => {
 
 	it("never promises nothing at all", () => {
 		expect(maxLinesIn(1)).toBeGreaterThanOrEqual(1);
+	});
+});
+
+describe("drawableName", () => {
+	it("leaves printable ASCII alone", () => {
+		expect(drawableName("Deep Work")).toBe("Deep Work");
+	});
+
+	it.each([
+		["an em dash", "Deep — Work", "Deep Work"],
+		["curly quotes", "“Deep” Work", "Deep Work"],
+		["an emoji", "🎯 Deep Work", "Deep Work"],
+		["an accent", "Café Work", "Caf Work"],
+	])("drops %s", (_label, given, expected) => {
+		expect(drawableName(given)).toBe(expected);
+	});
+
+	it("collapses the gap left behind rather than leaving a run of spaces", () => {
+		expect(drawableName("Deep 🎯 🎯 Work")).toBe("Deep Work");
+	});
+
+	it("returns nothing when there is nothing drawable", () => {
+		expect(drawableName("🎯🔥")).toBe("");
 	});
 });

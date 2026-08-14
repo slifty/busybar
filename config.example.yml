@@ -39,6 +39,36 @@ programs:
   # Shows a random emoji, changing every five seconds. Takes no settings.
   # random-emoji:
 
+  # Interrupts you before an appointment starts, with its name and a countdown
+  # to it. Draws nothing the rest of the time.
+  #
+  # Meant to run alongside `focus`: that says what you should be thinking about
+  # now, this says what you are about to be late for. It draws at priority 91,
+  # one above an active BUSY or CUSTOM session, so an alert interrupts a focus
+  # session you started. That is deliberate -- a focus session does not make
+  # the meeting go away.
+  # event:
+  #   # The appointment calendars to watch, as `https` URLs or paths to `.ics`
+  #   # files. As many as you have, and at least one: a program watching no
+  #   # calendars looks exactly like a working one, since drawing nothing is
+  #   # what this does when nothing is coming up, so it is refused instead.
+  #   #
+  #   # They are read together and pooled, so which feed an appointment came
+  #   # from stops mattering the moment it is read. That is why this is a list
+  #   # rather than named entries -- the names would have to be unique, since
+  #   # YAML rejects a repeated key, and would mean nothing. Group them with a
+  #   # comment, and keep as many under each heading as you like.
+  #   #
+  #   # How much warning an appointment gets depends on what the calendar says
+  #   # about where it is: thirty minutes for somewhere to physically be, five
+  #   # for a link or for an entry that says neither.
+  #   calendars:
+  #     # work
+  #     - https://calendar.google.com/calendar/ical/…/basic.ics
+  #     - https://calendar.google.com/calendar/ical/…/basic.ics
+  #     # personal
+  #     - local/personal.ics
+
   # Shows the focus block you are in and how long is left of it.
   # focus:
   #   # An iCalendar feed to read focus blocks from -- either an https URL or a
