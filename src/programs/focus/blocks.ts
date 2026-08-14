@@ -1,7 +1,7 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
-import { MS_PER_SECOND } from "../../constants/time.ts";
+import { rename, writeFile } from "node:fs/promises";
+import { readCalendarSource, readLocalFile } from "../../calendar/source.ts";
+import { drawableName } from "../../text.ts";
 import { parseCalendar } from "./calendar.ts";
-import { drawableName } from "./name.ts";
 import { CALENDAR_KEY, FILE_KEY } from "./settings.ts";
 import type { Focus } from "./focus.ts";
 import type { FocusSettings } from "./settings.ts";
@@ -13,14 +13,10 @@ import type { FocusSettings } from "./settings.ts";
 // can type in a text editor is the fastest way to try something without
 // exporting anything. Which of them is in use is `programs.focus.calendar`,
 // and both are read through `settings.ts`.
-
-// How long to wait for a calendar served over HTTP.
 //
-// Short, because this is on the path of every draw. A feed that has not
-// answered in ten seconds has already cost more than the draw was worth, and
-// the runner will come back in five.
-const FETCH_TIMEOUT_SECONDS = 10;
-const FETCH_TIMEOUT_MS = FETCH_TIMEOUT_SECONDS * MS_PER_SECOND;
+// Reading a source -- fetching a URL, opening a path -- is shared with every
+// other program that reads a calendar and lives in `src/calendar/source.ts`.
+// What is here is the JSON file, which is this program's alone.
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
@@ -78,81 +74,6 @@ const parseBlock = (value: unknown, index: number, path: string): Focus => {
 	return { name, start, end };
 };
 
-// Reads a source from disk, failing loudly rather than quietly.
-//
-// A source that is missing is a mistake worth stopping for: the alternative is
-// a bar that sits dark all day while the reason scrolls past in a log. Saying
-// which setting to fix, and in which file, is most of what makes that message
-// useful.
-//
-// `what` names the kind of thing that was expected, because a calendar and a
-// schedule file are read the same way but configured separately -- a message
-// that called both "a focus schedule" would describe the wrong file half the
-// time it appeared.
-const readLocalFile = async (
-	path: string,
-	setting: string,
-	what: string,
-): Promise<string> => {
-	try {
-		return await readFile(path, "utf8");
-	} catch (error) {
-		throw new Error(
-			`could not read ${path} -- set ${setting} to point at ${what}`,
-			{ cause: error },
-		);
-	}
-};
-
-// Whether a source names something to fetch rather than something to open.
-//
-// A path and a URL are told apart by the URL parsing, not by looking for a
-// slash or a dot: `local/focus.ics` is not a URL, `https://…/basic.ics` is, and
-// anything else -- a `file:` URL, a Windows drive letter -- is treated as a
-// path and left to the filesystem to accept or reject.
-const isFetchable = (source: string): boolean => {
-	if (!URL.canParse(source)) {
-		return false;
-	}
-
-	const { protocol } = new URL(source);
-
-	return protocol === "http:" || protocol === "https:";
-};
-
-// Separate from the response handling below so that a network failure and a
-// calendar that answers badly stay distinguishable: the first cannot say more
-// than that it did not arrive, the second can say what came back instead.
-const requestCalendar = async (url: string): Promise<Response> => {
-	try {
-		return await fetch(url, {
-			signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-		});
-	} catch (error) {
-		throw new Error(`could not fetch the calendar at ${url}`, { cause: error });
-	}
-};
-
-const fetchCalendar = async (url: string): Promise<string> => {
-	const response = await requestCalendar(url);
-
-	if (!response.ok) {
-		throw new Error(
-			`the calendar at ${url} answered ${String(response.status)} ${response.statusText}`,
-		);
-	}
-
-	return await response.text();
-};
-
-const readCalendar = async (
-	source: string,
-	{ where }: FocusSettings,
-): Promise<string> =>
-	isFetchable(source)
-		? await fetchCalendar(source)
-		: await readLocalFile(source, where(CALENDAR_KEY), "an iCalendar feed");
-
 const parseJson = (contents: string, path: string): unknown => {
 	try {
 		return JSON.parse(contents);
@@ -188,7 +109,7 @@ const loadBlocks = async (settings: FocusSettings): Promise<Focus[]> => {
 	}
 
 	return parseCalendar(
-		await readCalendar(calendar, settings),
+		await readCalendarSource(calendar, settings.where(CALENDAR_KEY)),
 		new Date(),
 		calendar,
 	);
@@ -249,4 +170,4 @@ const mirrorBlocks = async (
 	}
 };
 
-export { drawableName, isFetchable, loadBlocks, mirrorBlocks };
+export { loadBlocks, mirrorBlocks };

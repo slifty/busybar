@@ -12,12 +12,7 @@ import {
 	vi,
 } from "vitest";
 import { TEST_CONFIG_FILE, sectionOf } from "../../../test/config.ts";
-import {
-	drawableName,
-	isFetchable,
-	loadBlocks,
-	mirrorBlocks,
-} from "../blocks.ts";
+import { loadBlocks, mirrorBlocks } from "../blocks.ts";
 import { DEFAULT_FOCUS_FILE, focusSettings } from "../settings.ts";
 import { SINGLE_EVENT } from "./fixtures/calendars.ts";
 import { VALID_SCHEDULE } from "./fixtures/valid-schedule.ts";
@@ -62,29 +57,6 @@ const givenSchedule = async (contents: string): Promise<void> => {
 const givenScheduleOf = async (blocks: unknown): Promise<void> => {
 	await givenSchedule(JSON.stringify(blocks));
 };
-
-describe("drawableName", () => {
-	it("leaves printable ASCII alone", () => {
-		expect(drawableName("Deep Work")).toBe("Deep Work");
-	});
-
-	it.each([
-		["an em dash", "Deep — Work", "Deep Work"],
-		["curly quotes", "“Deep” Work", "Deep Work"],
-		["an emoji", "🎯 Deep Work", "Deep Work"],
-		["an accent", "Café Work", "Caf Work"],
-	])("drops %s", (_label, given, expected) => {
-		expect(drawableName(given)).toBe(expected);
-	});
-
-	it("collapses the gap left behind rather than leaving a run of spaces", () => {
-		expect(drawableName("Deep 🎯 🎯 Work")).toBe("Deep Work");
-	});
-
-	it("returns nothing when there is nothing drawable", () => {
-		expect(drawableName("🎯🔥")).toBe("");
-	});
-});
 
 describe("loadBlocks", () => {
 	it("reads a whole schedule", async () => {
@@ -259,27 +231,6 @@ describe("loadBlocks", () => {
 
 			await expect(load()).rejects.toThrow(/block 2/v);
 		});
-	});
-});
-
-describe("isFetchable", () => {
-	it.each(["http://example.test/basic.ics", "https://example.test/basic.ics"])(
-		"fetches %s",
-		(source) => {
-			expect(isFetchable(source)).toBe(true);
-		},
-	);
-
-	// Told apart by parsing the source as a URL rather than by looking for a
-	// slash or a dot, so a relative path with either in it stays a path.
-	it.each([
-		"local/focus.ics",
-		"/absolute/focus.ics",
-		"./focus.ics",
-		"focus.ics",
-		"file:///tmp/focus.ics",
-	])("opens %s", (source) => {
-		expect(isFetchable(source)).toBe(false);
 	});
 });
 

@@ -21,6 +21,23 @@ import type { Font, InkBox } from "./fonts.ts";
 // What is left is a search. Every font is measured, so the largest one whose
 // wrapped lines fit the region can be found by trying them in order.
 
+// Text elements only accept printable ASCII, because the fonts are bitmap
+// ASCII. Names written by hand will not respect that and calendar titles
+// certainly will not -- en dashes, curly quotes and emoji are all ordinary in
+// a title -- so anything undrawable is dropped and the surrounding whitespace
+// tidied, rather than letting the device reject the draw over a character
+// nobody would miss.
+//
+// It lives here, beside the fitting, because what the fonts can draw is one
+// question rather than two: every caller that has to fit a string first has to
+// know which of it will survive. Three of them do, in two programs, so it
+// belongs to neither.
+const UNDRAWABLE = /[^\x20-\x7E]+/gv;
+const RUN_OF_SPACES = / {2,}/gv;
+
+const drawableName = (name: string): string =>
+	name.replace(UNDRAWABLE, " ").replace(RUN_OF_SPACES, " ").trim();
+
 // One blank row between lines. Nothing separates them otherwise -- the metrics
 // run from the top of a capital to the bottom of a descender, so without a gap
 // a descender on one line would sit directly on the capitals of the next.
@@ -357,5 +374,5 @@ const maxLinesIn = (height: number): number =>
 		MINIMUM_LINES,
 	);
 
-export { fitText, maxLinesIn };
+export { drawableName, fitText, maxLinesIn };
 export type { FittedLine, FittedText, Region };
