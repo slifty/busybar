@@ -457,6 +457,27 @@ describe("the lead an appointment gets", () => {
 
 		expect(fake.draws).toStrictEqual([]);
 	});
+
+	// The numbers are an argument about how far away somebody's meetings are,
+	// and the file is where an argument like that gets settled.
+	it("takes the lead from the file when the file says one", async () => {
+		const fake = createFakeBar();
+		const path = await calendarAt(
+			"configured-lead.ics",
+			...timedEvent("configured-lead", "TEST Configured", "20260102T100000Z", [
+				"LOCATION:TEST Room 4",
+			]),
+		);
+
+		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
+
+		await event.draw({
+			...contextFor(fake, [path]),
+			config: sectionOf({ calendars: [path], leads: { located: 1 } }),
+		});
+
+		expect(fake.draws).toStrictEqual([]);
+	});
 });
 
 describe("when the alert has not opened", () => {

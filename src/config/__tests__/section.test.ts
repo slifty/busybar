@@ -142,6 +142,66 @@ describe("strings", () => {
 	});
 });
 
+describe("number", () => {
+	it("reads what was written", () => {
+		expect(sectionOf({ linger: 45 }).number("linger", 120)).toBe(45);
+	});
+
+	it("falls back when the setting is absent", () => {
+		expect(sectionOf({}).number("linger", 120)).toBe(120);
+	});
+
+	it.each([
+		["nothing after it", null],
+		["a key that was never written", undefined],
+	])("falls back for a key with %s", (_label, value) => {
+		expect(sectionOf({ linger: value }).number("linger", 120)).toBe(120);
+	});
+
+	// Zero is a coherent thing to ask for -- no warning at all -- and is not
+	// the same as leaving the setting out.
+	it("takes zero as a value rather than as an absence", () => {
+		expect(sectionOf({ lead: 0 }).number("lead", 30)).toBe(0);
+	});
+
+	it("takes a fraction", () => {
+		expect(sectionOf({ located: 0.5 }).number("located", 30)).toBe(0.5);
+	});
+
+	// The failure worth catching: `5m` read as five would be a lead time
+	// silently a sixth of what the file plainly says.
+	it("refuses text, however numeric it looks", () => {
+		expect(() => sectionOf({ located: "5" }).number("located", 30)).toThrow(
+			"test-config.yml: programs.focus.located must be a number",
+		);
+	});
+
+	it("refuses a length of time below none", () => {
+		expect(() => sectionOf({ located: -1 }).number("located", 30)).toThrow(
+			"test-config.yml: programs.focus.located must not be negative",
+		);
+	});
+
+	it.each([
+		["not a number", Number.NaN],
+		["without end", Number.POSITIVE_INFINITY],
+	])("refuses a number that is %s", (_label, value) => {
+		expect(() => sectionOf({ located: value }).number("located", 30)).toThrow(
+			/must be a number/v,
+		);
+	});
+
+	it("counts the key as read", () => {
+		const section = sectionOf({ linger: 45 });
+
+		section.number("linger", 120);
+
+		expect(() => {
+			section.done();
+		}).not.toThrow();
+	});
+});
+
 describe("section", () => {
 	it("reads a block nested inside another", () => {
 		const root = rootOf({ device: { address: "10.0.0.1" } });

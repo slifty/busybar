@@ -60,14 +60,30 @@ programs:
   #   # comment, and keep as many under each heading as you like.
   #   #
   #   # How much warning an appointment gets depends on what the calendar says
-  #   # about where it is: thirty minutes for somewhere to physically be, five
-  #   # for a link or for an entry that says neither.
+  #   # about where it is -- see `leads` below.
   #   calendars:
   #     # work
   #     - https://calendar.google.com/calendar/ical/…/basic.ics
   #     - https://calendar.google.com/calendar/ical/…/basic.ics
   #     # personal
   #     - local/personal.ics
+  #
+  #   # How many minutes of warning each kind of appointment gets.
+  #   #
+  #   # The numbers are about travel rather than importance: what differs is how
+  #   # long it takes to be where the appointment is. They are here because that
+  #   # is a fact about your day rather than about this tool -- somebody whose
+  #   # meetings are all in the next room wants a minute, and somebody with a
+  #   # commute to one wants half an hour.
+  #   #
+  #   # `located` is an entry with somewhere physical written on it, `url` is one
+  #   # with a link, and `plain` is one that says neither. A location that is
+  #   # itself a link counts as a link, and a room wins over a link when an entry
+  #   # carries both.
+  #   leads:
+  #     located: 30
+  #     url: 5
+  #     plain: 5
 
   # Shows the focus block you are in and how long is left of it.
   # focus:

@@ -100,11 +100,18 @@ the same code.
 How you get somewhere is what decides how much warning it is worth, and the
 numbers are about travel rather than importance:
 
-| The calendar says   | Warning    | Why                                           |
-| ------------------- | ---------- | --------------------------------------------- |
-| A physical location | 30 minutes | Long enough to get there                      |
-| A URL               | 5 minutes  | Long enough to finish a sentence and click it |
-| Neither             | 5 minutes  | Treated as a link — see below                 |
+| The calendar says   | Default warning | Why                                           |
+| ------------------- | --------------- | --------------------------------------------- |
+| A physical location | 30 minutes      | Long enough to get there                      |
+| A URL               | 5 minutes       | Long enough to finish a sentence and click it |
+| Neither             | 5 minutes       | Treated as a link — see below                 |
+
+Those are defaults rather than the rule. `leads` in the config file sets each of
+the three, in minutes, because how far away your meetings are is a fact about
+your day rather than about this tool — somebody whose appointments are all in
+the next room wants a minute, and somebody with a commute to one wants half an
+hour. The reasoning above is what the numbers mean, not an argument you have to
+accept.
 
 A link is read from `URL`, `CONFERENCE`, or `X-GOOGLE-CONFERENCE`, whichever is
 set first. The last of those is what Google Calendar actually writes for a Meet
@@ -250,9 +257,12 @@ countdown on its own in between, so a typical alert is one draw.
 
 ## Settings
 
-| Setting     | Default | What it does                                                                               |
-| ----------- | ------- | ------------------------------------------------------------------------------------------ |
-| `calendars` | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
+| Setting         | Default | What it does                                                                               |
+| --------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `calendars`     | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
+| `leads.located` | `30`    | Minutes of warning for an appointment with somewhere physical to be                        |
+| `leads.url`     | `5`     | Minutes of warning for one with a link                                                     |
+| `leads.plain`   | `5`     | Minutes of warning for one that says neither                                               |
 
 ---
 

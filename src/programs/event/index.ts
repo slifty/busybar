@@ -10,13 +10,13 @@ import {
 } from "../../constants/time.ts";
 import { COUNTDOWN_METRICS, FONT_METRICS, widthOf } from "../../fonts.ts";
 import { fitText, maxLinesIn } from "../../text.ts";
-import { alertAt, nextAlertOpensAt } from "./alerts.ts";
+import { alertsFor, nextOpensAt, showingAt } from "./alerts.ts";
 import { ALERT_COLOR } from "./appointment.ts";
 import { loadAppointments } from "./appointments.ts";
 import { CALENDARS_KEY, eventSettings } from "./settings.ts";
 import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 import type { Region } from "../../text.ts";
-import type { Appointment } from "./appointment.ts";
+import type { Alert } from "./alerts.ts";
 
 const BORDER_ELEMENT_ID = "event-border";
 const NAME_ELEMENT_ID = "event-name";
@@ -215,18 +215,19 @@ const unixSeconds = (date: Date): string =>
 
 const drawAlert = async (
 	{ bar, applicationName, priority }: ProgramContext,
-	appointment: Appointment,
-	appointments: readonly Appointment[],
+	alert: Alert,
+	alerts: readonly Alert[],
 	now: Date,
 ): Promise<DrawResult> => {
+	const { appointment, endsAt } = alert;
 	const remainingMs = appointment.start.getTime() - now.getTime();
 
-	// Handing the device the start as an expiry means it takes the alert down
-	// itself, on time, even if this process is not around to do it -- and the
-	// built-in clock comes back on its own. The countdown reaching zero and the
-	// alert disappearing are then the same instant, which is what makes the
-	// alert end without anything having to acknowledge it.
-	const displayUntil = unixSeconds(appointment.start);
+	// Handing the device the alert's end as an expiry means it takes the alert
+	// down itself, on time, even if this process is not around to do it -- and
+	// the built-in clock comes back on its own. That end is the appointment's
+	// start, so the countdown reaching zero and the alert disappearing are the
+	// same instant.
+	const displayUntil = unixSeconds(endsAt);
 
 	const { font, lines: fitted } = fitText(appointment.name, NAME_REGION);
 	const nameCenterX = CONTENT_LEFT + Math.floor(CONTENT_WIDTH / SIDES);
@@ -289,6 +290,10 @@ const drawAlert = async (
 			{
 				id: COUNTDOWN_ELEMENT_ID,
 				type: "countdown",
+				// The appointment's own start rather than the alert's end. The
+				// digits count down to the thing you are about to be late for,
+				// which the two agree about today and are not the same
+				// question.
 				timestamp: unixSeconds(appointment.start),
 				direction: "time_left",
 				show_hours: "when_non_zero",
@@ -304,16 +309,19 @@ const drawAlert = async (
 		],
 	});
 
-	// Two things can change what is on screen: this appointment arriving, and
-	// a sooner one's alert opening over the top of it. Whichever comes first
-	// is the next draw, and the device holds the countdown honest in between.
-	const opens = nextAlertOpensAt(appointments, now);
-	const until = Math.min(
-		remainingMs,
-		opens === undefined ? Infinity : opens.getTime() - now.getTime(),
+	// Two things can change what is on screen, and the next draw is whichever
+	// comes first: this alert ending, and a sooner appointment's alert opening
+	// over the top of it. The device holds the countdown honest in between.
+	const opens = nextOpensAt(alerts, now);
+	const instants = [endsAt, opens].flatMap((instant) =>
+		instant !== undefined && instant.getTime() > now.getTime() ? [instant] : [],
 	);
 
-	return { nextDrawInMs: until };
+	return {
+		nextDrawInMs: Math.min(
+			...instants.map((instant) => instant.getTime() - now.getTime()),
+		),
+	};
 };
 
 // Reading the calendars here is a check, not a cache. `draw` reads them again
@@ -350,16 +358,17 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	// calendars belong to whatever is filling them in, and a meeting added
 	// this morning has to reach a process that started yesterday.
 	const appointments = await loadAppointments(settings);
-	const alerting = alertAt(appointments, now);
+	const alerts = alertsFor(appointments, settings);
+	const showing = showingAt(alerts, now);
 
-	if (alerting !== undefined) {
-		return await drawAlert(context, alerting, appointments, now);
+	if (showing !== undefined) {
+		return await drawAlert(context, showing, alerts, now);
 	}
 
 	// Between alerts there is nothing to draw and nothing to clear: the last
-	// alert's elements were given the appointment's start as their expiry, so
-	// the device has already taken them down and handed the screen back.
-	const opens = nextAlertOpensAt(appointments, now);
+	// alert's elements were given its end as their expiry, so the device has
+	// already taken them down and handed the screen back.
+	const opens = nextOpensAt(alerts, now);
 	const untilNextAlert =
 		opens === undefined ? Infinity : opens.getTime() - now.getTime();
 
