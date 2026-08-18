@@ -344,6 +344,24 @@ again later: once `start` is over, the runner holds the program's block to the
 keys it asked for and refuses the rest, so a setting first read during a draw
 would be reported as one the program does not have.
 
+**A program is drawn again when something it cannot see says so.**
+`ProgramContext` carries two calls for that, and both exist because a program
+schedules its own draws from what it knew at the time:
+
+- `redraw()` brings this program's next draw forward to now, for when something
+  outside the draw loop learns better -- a calendar gaining a meeting that starts
+  in two minutes while the program is asleep until tomorrow.
+- `releaseScreen()` says this program has stopped occupying the display, and
+  draws every _other_ program now. It is not politeness: the device destroys the
+  elements underneath a higher-priority draw rather than covering them, so
+  without this the screen simply stays blank until whatever was interrupted
+  happens to draw again on its own schedule. The caller is deliberately not
+  woken, or a program that has just cleared the screen would draw straight back
+  over what it was making room for.
+
+Both are no-ops before the run starts, since the draw loops do not exist until
+every program has been prepared.
+
 **A program may react to the bar's buttons as well as to the clock**, by
 declaring an optional `onButton`. The handler does its own work and returns only
 whether the screen is now wrong (`{ redraw: true }`), which brings the next draw
@@ -419,6 +437,15 @@ against firmware reporting `api_semver` 25.0.0.
 - **Draws are preempted by priority.** Built-in apps sit at 10, an active BUSY
   or CUSTOM focus session at 90, and the API default is 50. Losing the race
   returns HTTP 409, so anything long-running has to expect it.
+- **A higher-priority draw destroys the elements underneath, it does not cover
+  them.** Measured: an application drawing at 50 with `timeout: 0`, then another
+  drawing at 91, then the second clearing itself, leaves the display **blank** --
+  the first application's elements are gone rather than revealed again. This is
+  the fact behind `releaseScreen` in `src/program.ts`. The program underneath
+  cannot detect it, either: its own draw succeeded, so the runner never saw a
+  409 and never retried, and it will not draw again until whatever it scheduled
+  comes round -- which for `focus` mid-block is the next phase change, hours
+  away. Anything that interrupts has to say when it has finished.
 - **Equal priority does not win, despite the docs.** The spec says a draw is
   accepted when its priority is `>=` the current app's, and that equal-priority
   requests from a different `application_name` override what is on screen.

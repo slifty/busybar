@@ -272,6 +272,19 @@ in [`AGENTS.md`](../../../AGENTS.md). The one place this does not hold is the
 cloud proxy, whose stream is JSON rather than protobuf and which this decoder
 would not read.
 
+## Handing the screen back
+
+Whenever an alert stops — answered, expired, or timed out — this program tells
+the runner it has let the display go, and every other program draws again.
+
+That is not politeness. The device **destroys** the elements underneath a
+higher-priority draw rather than covering them, and never restores them, so an
+alert that came and went leaves the bar blank rather than back where it was.
+`focus` cannot notice: its own draw succeeded, and it will not draw again until
+the next phase change, which mid-block can be hours off. Measured on the bar,
+not reasoned about — an application drawing at 50, interrupted at 91, is gone
+the moment the interruption clears.
+
 ## When two alerts overlap
 
 Overlapping alerts are ordinary rather than a conflict, and this is where

@@ -144,6 +144,9 @@ const context = {
 	log: (message: string): void => {
 		process.stdout.write(`${message}\n`);
 	},
+	// Nothing here is running alongside anything else.
+	redraw: (): undefined => undefined,
+	releaseScreen: (): undefined => undefined,
 };
 
 // Whatever happens, the made-up blocks come off the bar and off the disk.

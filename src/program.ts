@@ -27,6 +27,32 @@ interface ProgramContext {
 	// instead: the runner puts those on the bar, and a line in a log that
 	// nobody is watching is exactly what drawing failures exists to avoid.
 	readonly log: (message: string) => void;
+	// Asks to be drawn now rather than when the last draw said to come back.
+	//
+	// A program schedules its own draws from what it knew at the time, and
+	// sometimes something else learns otherwise -- a calendar gains a meeting
+	// that starts in two minutes while the program is asleep until tomorrow.
+	// This is how the thing that found out says so.
+	//
+	// It never draws twice at once: a call while a draw is in flight is
+	// honoured after that draw rather than alongside it. Calling it before the
+	// run has started -- from `start` -- does nothing, since there is no draw
+	// loop yet to bring forward.
+	readonly redraw: () => void;
+	// Says that this program has stopped occupying the display, so that every
+	// other program draws again now.
+	//
+	// This exists because of how the device arbitrates the screen, which is
+	// harsher than it looks: a draw from a higher priority does not cover a
+	// lower-priority application's elements, it destroys them. They do not come
+	// back when the interruption ends, and their owner has no way to know they
+	// are gone -- its own draw succeeded, so the runner never saw the 409 that
+	// would have had it retry.
+	//
+	// So a program that interrupts the others has to tell them when it is done.
+	// Nothing else can: the device reports no such event, and a program that
+	// polled for it would be redrawing constantly to find out.
+	readonly releaseScreen: () => void;
 }
 
 // What a draw tells the runner about when to come back.

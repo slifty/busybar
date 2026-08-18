@@ -84,6 +84,14 @@ including a focus session you started — for the five or thirty minutes it is u
 and not a moment longer, since the alert takes itself down once it is answered
 or has run out of time. Running it alongside `focus` is what it is for.
 
+**An interrupting program has to hand the screen back.** The device does not
+cover the elements underneath a higher-priority draw — it destroys them, and
+never puts them back. The program underneath cannot tell, since its own draw
+succeeded and it will not draw again until whatever it scheduled comes round. So
+a program that stops occupying the display says so, and the runner draws every
+other program immediately. Without it, acknowledging a meeting alert leaves the
+bar blank until `focus` next has a reason of its own to draw.
+
 Two consequences worth knowing before writing a list:
 
 - **Equal priorities do not share the screen.** The device settles a tie in

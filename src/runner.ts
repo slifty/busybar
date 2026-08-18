@@ -72,11 +72,26 @@ const scopedLog =
 		log(`${name}: ${message}`);
 	};
 
+// Every running program's "draw now", by name.
+//
+// It is a registry rather than a list of handles because the contexts are built
+// before the draw loops they belong to: a program is handed its context when it
+// is prepared, and preparation happens before anything draws. Reading the
+// registry at the moment a program asks to be woken, rather than closing over a
+// handle that does not exist yet, is what lets those two orders coexist.
+type Wakeups = Map<string, () => void>;
+
+// Everything a program is handed that is the same for all of them.
+interface Environment {
+	readonly bar: BusyBar;
+	readonly config: Config;
+	readonly log: (message: string) => void;
+	readonly wakeups: Wakeups;
+}
+
 const runningProgram = (
-	bar: BusyBar,
 	program: Program,
-	config: Config,
-	log: (message: string) => void,
+	{ bar, config, log, wakeups }: Environment,
 ): Running => ({
 	program,
 	context: {
@@ -88,6 +103,19 @@ const runningProgram = (
 		// agrees about how loudly it speaks.
 		priority: program.priority ?? DEFAULT_DRAW_PRIORITY,
 		log: scopedLog(log, program.name),
+		redraw: () => {
+			wakeups.get(program.name)?.();
+		},
+		// Everyone but the program that released it. Waking the caller as well
+		// would have a program that has just cleared the screen immediately
+		// draw over whatever it was making room for.
+		releaseScreen: () => {
+			for (const [name, wake] of wakeups) {
+				if (name !== program.name) {
+					wake();
+				}
+			}
+		},
 	},
 });
 
@@ -202,6 +230,7 @@ const runProgram = (
 	{ program, context }: Running,
 	signal: AbortSignal,
 	aborted: Promise<void>,
+	wakeups: Wakeups,
 ): Drawing => {
 	// Losing the screen to a focus session, or to a program of ours that
 	// outranks this one, is expected and can persist for as long as that lasts.
@@ -362,6 +391,12 @@ const runProgram = (
 		}
 	};
 
+	// Registered before the first draw, so that a program woken by another one's
+	// release during that draw is not missed.
+	wakeups.set(program.name, () => {
+		void drawAndSchedule();
+	});
+
 	const finished = (async (): Promise<void> => {
 		// Nothing this run drew is on screen yet, so anything that is belongs
 		// to a run that is over -- most likely a failure the last one left up
@@ -374,6 +409,7 @@ const runProgram = (
 			await drawAndSchedule();
 			await aborted;
 		} finally {
+			wakeups.delete(program.name);
 			clearTimeout(nextDraw);
 			await cleanUp(context);
 		}
@@ -396,8 +432,11 @@ const runPrograms = async (
 	config: Config,
 	log: (message: string) => void,
 ): Promise<void> => {
+	const wakeups: Wakeups = new Map();
+
+	const environment: Environment = { bar, config, log, wakeups };
 	const entries = programs.map((program) =>
-		runningProgram(bar, program, config, log),
+		runningProgram(program, environment),
 	);
 
 	// Before anything is scheduled or drawn, and all at once rather than in
@@ -451,7 +490,7 @@ const runPrograms = async (
 
 	const drawings = started.map((entry) => ({
 		entry,
-		drawing: runProgram(entry, controller.signal, aborted),
+		drawing: runProgram(entry, controller.signal, aborted, wakeups),
 	}));
 
 	// One connection for the whole run, and only when something is listening.

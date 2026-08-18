@@ -452,6 +452,7 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	if (onScreen !== undefined) {
 		onScreen = undefined;
 		await clearApplication(context.bar, context.applicationName);
+		context.releaseScreen();
 	}
 
 	// Otherwise there is nothing to draw and nothing to clear.
@@ -481,7 +482,7 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 // the bar for something else entirely.
 const onButton = async (
 	button: Button,
-	{ bar, applicationName, log }: ProgramContext,
+	{ bar, applicationName, log, releaseScreen }: ProgramContext,
 ): Promise<InputResult> => {
 	if (onScreen === undefined) {
 		return {};
@@ -496,10 +497,14 @@ const onButton = async (
 	}
 
 	// The elements were drawn to expire when the alert would have ended, so
-	// they outlast being answered unless they are taken down. This is the one
-	// place this program clears the screen: every other ending is an expiry the
-	// device performs on its own.
+	// they outlast being answered unless they are taken down.
 	await clearApplication(bar, applicationName);
+
+	// Whatever this alert interrupted is gone rather than merely covered: the
+	// device destroys a lower-priority application's elements rather than
+	// hiding them behind ours, and their owner never saw a refusal that would
+	// have told it so. Nothing else will put the screen back.
+	releaseScreen();
 
 	log(`acknowledged by the ${button} button`);
 

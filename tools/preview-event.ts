@@ -129,6 +129,9 @@ const context = {
 	log: (message: string) => {
 		console.log(`  ${message}`);
 	},
+	// Nothing here is running alongside anything else.
+	redraw: () => undefined,
+	releaseScreen: () => undefined,
 };
 
 try {

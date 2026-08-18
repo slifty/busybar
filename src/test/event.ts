@@ -127,17 +127,47 @@ const createCalendars = (): Calendars => {
 	};
 };
 
+// What a program did besides draw: asked to be redrawn, or said it had let the
+// screen go. Both are calls out to the runner, so a suite that wants to assert
+// on them has to be handed somewhere for them to land.
+interface Signals {
+	readonly redraws: () => number;
+	readonly releases: () => number;
+}
+
 const contextFor = (
 	fake: FakeBar,
 	calendars: string[],
 	settings: Record<string, unknown> = {},
+	signals?: Signals & { readonly record: (of: "redraw" | "release") => void },
 ): ProgramContext => ({
 	bar: fake.bar,
 	config: sectionOf({ calendars, ...settings }),
 	applicationName: event.name,
 	priority: ALERT_PRIORITY,
 	log: () => undefined,
+	redraw: () => {
+		signals?.record("redraw");
+	},
+	releaseScreen: () => {
+		signals?.record("release");
+	},
 });
+
+// Somewhere for those calls to be counted.
+const createSignals = (): Signals & {
+	readonly record: (of: "redraw" | "release") => void;
+} => {
+	const counts = { redraw: 0, release: 0 };
+
+	return {
+		record: (of) => {
+			counts[of] += 1;
+		},
+		redraws: () => counts.redraw,
+		releases: () => counts.release,
+	};
+};
 
 // A context for a program that has been started.
 //
@@ -162,6 +192,7 @@ export {
 	caption,
 	contextFor,
 	createCalendars,
+	createSignals,
 	drawnName,
 	isCountdown,
 	isRectangle,
@@ -172,4 +203,4 @@ export {
 	timedEvent,
 	unixSeconds,
 };
-export type { Calendars, Element, Elements, TextElement };
+export type { Calendars, Element, Elements, Signals, TextElement };

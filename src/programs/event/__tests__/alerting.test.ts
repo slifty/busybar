@@ -10,7 +10,9 @@ import {
 import { MS_PER_SECOND } from "../../../constants/time.ts";
 import { createFakeBar } from "../../../test/bar.ts";
 import {
+	contextFor,
 	createCalendars,
+	createSignals,
 	drawnName,
 	startedContext,
 	stockSoundsPlayed,
@@ -227,6 +229,89 @@ describe("an alert that stops being one", () => {
 		await event.draw(context);
 
 		expect(fake.clears).toHaveLength(1);
+	});
+});
+
+// The device destroys a lower-priority application's elements rather than
+// hiding them behind ours, and never puts them back -- so a program that
+// interrupts the others has to say when it has finished, or the screen stays
+// blank until whatever it interrupted happens to draw again on its own
+// schedule, which can be hours.
+describe("letting the other programs have the screen back", () => {
+	const watched = async (
+		fake: FakeBar,
+		name: string,
+	): Promise<{
+		readonly context: ProgramContext;
+		readonly releases: () => number;
+	}> => {
+		const path = await calendars.write(
+			`${name}.ics`,
+			...timedEvent(name, `TEST ${name}`, START),
+		);
+		const signals = createSignals();
+		const context = contextFor(fake, [path], {}, signals);
+
+		await event.start?.(context);
+
+		return { context, releases: signals.releases };
+	};
+
+	it("says so when an alert is acknowledged", async () => {
+		const fake = createFakeBar();
+		const { context, releases } = await watched(fake, "released-by-press");
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+
+		expect(releases()).toBe(0);
+
+		await event.onButton?.(ANY_BUTTON, context);
+
+		expect(releases()).toBe(1);
+	});
+
+	// The other way an alert ends. Nobody pressed anything, so nothing else
+	// would mark the moment.
+	it("says so when an alert runs out of time", async () => {
+		const fake = createFakeBar();
+		const { context, releases } = await watched(fake, "released-by-timeout");
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+
+		vi.setSystemTime(at("10:03:00"));
+		await event.draw(context);
+
+		expect(releases()).toBe(1);
+	});
+
+	// Most of the day this program draws nothing at all, and saying "the screen
+	// is yours" on every one of those draws would have every other program
+	// redrawing every fifteen minutes for no reason.
+	it("says nothing when it never had the screen", async () => {
+		const fake = createFakeBar();
+		const { context, releases } = await watched(fake, "never-had-it");
+
+		vi.setSystemTime(at("09:00:00"));
+		await event.draw(context);
+		await event.draw(context);
+
+		expect(releases()).toBe(0);
+	});
+
+	it("says so once rather than on every draw afterwards", async () => {
+		const fake = createFakeBar();
+		const { context, releases } = await watched(fake, "released-once");
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+
+		vi.setSystemTime(at("10:03:00"));
+		await event.draw(context);
+		await event.draw(context);
+
+		expect(releases()).toBe(1);
 	});
 });
 
