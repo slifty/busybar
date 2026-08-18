@@ -1,5 +1,6 @@
 import type { BusyBar } from "@busy-app/busy-lib";
 import type { ConfigSection } from "./config/section.ts";
+import type { Button } from "./input/buttons.ts";
 
 // What a program is handed when it draws.
 interface ProgramContext {
@@ -43,13 +44,24 @@ interface DrawResult {
 	readonly nextDrawInMs?: number;
 }
 
+// What reacting to a press tells the runner.
+//
+// A handler does its own work -- stopping a sound, forgetting an alert -- and
+// this says only whether the screen is now wrong. It is separate from
+// `DrawResult` because a press does not get to reschedule the program: what a
+// draw asked for still stands, and the press either brings the next one
+// forward to now or leaves it alone.
+interface InputResult {
+	// Whether the program wants to be drawn now rather than when it last asked
+	// to be. Left off, the press changed nothing the screen is showing.
+	readonly redraw?: boolean;
+}
+
 // An operating mode: one thing the bar can be doing.
 //
 // The model is deliberately small -- a program says what to put on screen and
 // when it wants to be asked again, and the runner owns connecting, waiting,
-// preemption, and cleanup. That covers everything drawing-shaped. A program
-// that needs to react to button presses or device state will need this
-// contract to grow.
+// preemption, cleanup, and listening to the bar's buttons.
 //
 // Several can run at once, and they are not coordinated with each other:
 // each draws whenever it has something to say, and the device decides which
@@ -89,6 +101,26 @@ interface Program {
 	// the file would be told it does not have.
 	readonly start?: (context: ProgramContext) => Promise<void>;
 	readonly draw: (context: ProgramContext) => Promise<DrawResult>;
+	// Someone pressed one of the bar's three buttons.
+	//
+	// Declaring this is what opens the device's state stream at all: it is the
+	// tool's one non-HTTP connection to the bar, and a run of programs that
+	// none of them react to presses does not open it. See `src/input/`.
+	//
+	// Every program that declares one hears every press. The bar has no notion
+	// of which program a press was meant for -- it has three buttons and no
+	// concept of ours on screen -- so a program has to decide for itself
+	// whether a press is anything to do with it, and the honest answer is
+	// usually no. Reporting a press to a program that is showing nothing is
+	// how a press ends up acknowledging an alert that is not there.
+	//
+	// It runs alongside the draw loop rather than inside it, so a press is
+	// heard while the program is waiting rather than only when it next draws.
+	// The runner still never lets two draws overlap.
+	readonly onButton?: (
+		button: Button,
+		context: ProgramContext,
+	) => Promise<InputResult>;
 }
 
-export type { DrawResult, Program, ProgramContext };
+export type { DrawResult, InputResult, Program, ProgramContext };

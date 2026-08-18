@@ -21,6 +21,10 @@ import { ALERT_SOUND, REPEAT_MS } from "../sound.ts";
 import type { ProgramContext } from "../../../program.ts";
 import type { FakeBar } from "../../../test/bar.ts";
 
+// The bar has three buttons and this program has one thing to say, so which one
+// is pressed is deliberately not part of any of this.
+const ANY_BUTTON = "ok";
+
 // A ten o'clock appointment, which is what all of these are about.
 const START = "20260102T100000Z";
 
@@ -165,5 +169,241 @@ describe("the sound", () => {
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Quiet Place");
 		expect(fake.plays).toStrictEqual([]);
+	});
+});
+
+describe("an alert that stops being one", () => {
+	// The elements carry the alert's end as their expiry and the draw is
+	// scheduled for that instant, so the device has almost always taken them
+	// down already and this clear is a formality.
+	it("comes down when it has run its course", async () => {
+		const fake = createFakeBar();
+		const context = await watching(fake, "run-out");
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+
+		vi.setSystemTime(at("10:03:00"));
+		await event.draw(context);
+
+		expect(fake.clears).toContainEqual({ application_name: event.name });
+	});
+
+	// What the clear is actually for. The expiry is still minutes off, the
+	// device knows nothing about the calendar, and nothing else would take a
+	// yellow frame off the screen for a meeting that is not happening.
+	it("comes down when the calendar stops mentioning the meeting", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write(
+			"cancelled.ics",
+			...timedEvent("cancelled", "TEST Cancelled", START),
+		);
+		const context = await startedContext(fake, [path]);
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+
+		expect(fake.clears).toStrictEqual([]);
+
+		// The meeting is called off while its alert is on screen.
+		await calendars.write("cancelled.ics");
+		await event.draw(context);
+
+		expect(fake.clears).toContainEqual({ application_name: event.name });
+		expect(fake.stops()).toBe(1);
+	});
+
+	// And having come down once, it does not go on being cleared for as long as
+	// the program has nothing to say.
+	it("is not cleared again on every draw afterwards", async () => {
+		const fake = createFakeBar();
+		const context = await watching(fake, "quiet-after");
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+
+		vi.setSystemTime(at("10:03:00"));
+		await event.draw(context);
+		await event.draw(context);
+
+		expect(fake.clears).toHaveLength(1);
+	});
+});
+
+describe("acknowledging with the button", () => {
+	// A program with a chiming alert on screen, which is what a press answers.
+	const sounding = async (
+		fake: FakeBar,
+		name: string,
+	): Promise<ProgramContext> => {
+		const context = await watching(fake, name);
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+
+		return context;
+	};
+
+	it("stops the sound", async () => {
+		const fake = createFakeBar();
+		const context = await sounding(fake, "stops");
+
+		await event.onButton?.(ANY_BUTTON, context);
+
+		expect(fake.stops()).toBe(1);
+	});
+
+	// The elements were drawn to expire when the alert would have ended, so
+	// they outlast being answered unless they are taken down. This is the one
+	// place the program clears the screen itself.
+	// Nothing playing is the ordinary case, not a failure: the chimes are ten
+	// seconds apart and under two seconds long, so a press lands between two of
+	// them far more often than during one. Reporting it would put a line in the
+	// log for every acknowledgement that worked exactly as intended, which is
+	// what running this on a real bar showed.
+	it("says nothing when the chime had already finished", async () => {
+		const fake = createFakeBar();
+		const context = await sounding(fake, "already-finished");
+		const logs: string[] = [];
+
+		fake.stopRejectsWith = Object.assign(new Error("No audio is playing"), {
+			status: 410,
+		});
+
+		await event.onButton?.(ANY_BUTTON, {
+			...context,
+			log: (message) => {
+				logs.push(message);
+			},
+		});
+
+		expect(logs.join(" ")).not.toMatch(/sound/v);
+	});
+
+	// A refusal that is not "nothing is playing" is worth a line, and still not
+	// worth taking the program down for.
+	it("says so when stopping the chime really failed", async () => {
+		const fake = createFakeBar();
+		const context = await sounding(fake, "stop-failed");
+		const logs: string[] = [];
+
+		fake.stopRejectsWith = new Error("TEST the bar is unreachable");
+
+		await event.onButton?.(ANY_BUTTON, {
+			...context,
+			log: (message) => {
+				logs.push(message);
+			},
+		});
+
+		expect(logs.join(" ")).toMatch(/could not stop the alert sound/v);
+	});
+
+	it("takes the alert off the screen", async () => {
+		const fake = createFakeBar();
+		const context = await sounding(fake, "clears");
+
+		await event.onButton?.(ANY_BUTTON, context);
+
+		expect(fake.clears).toContainEqual({ application_name: event.name });
+	});
+
+	it("asks to be drawn again, and draws nothing", async () => {
+		const fake = createFakeBar();
+		const context = await sounding(fake, "redraws");
+
+		const result = await event.onButton?.(ANY_BUTTON, context);
+
+		expect(result?.redraw).toBe(true);
+
+		const drawnBefore = [...fake.draws];
+		const playedBefore = [...fake.plays];
+
+		await event.draw(context);
+
+		expect(fake.draws).toStrictEqual(drawnBefore);
+		expect(fake.plays).toStrictEqual(playedBefore);
+	});
+
+	// The whole point of remembering: without it the next draw finds the same
+	// appointment in the same window and puts the same alert straight back up.
+	it("does not let the alert come back a minute later", async () => {
+		const fake = createFakeBar();
+		const context = await sounding(fake, "stays-gone");
+
+		await event.onButton?.(ANY_BUTTON, context);
+
+		vi.setSystemTime(at("10:01:00"));
+
+		const drawnBefore = [...fake.draws];
+
+		await event.draw(context);
+
+		expect(fake.draws).toStrictEqual(drawnBefore);
+	});
+
+	// Every program that takes presses hears every press, so most of what
+	// arrives is somebody using the bar for something else.
+	it("does nothing when there is no alert on screen", async () => {
+		const fake = createFakeBar();
+		const context = await watching(fake, "nothing-up");
+
+		vi.setSystemTime(at("09:00:00"));
+		await event.draw(context);
+
+		const result = await event.onButton?.(ANY_BUTTON, context);
+
+		expect(result?.redraw ?? false).toBe(false);
+		expect(fake.stops()).toBe(0);
+		expect(fake.clears).toStrictEqual([]);
+	});
+
+	// Acknowledging is about one alert, not about the day. The next appointment
+	// gets its own interruption.
+	it("leaves the next appointment's alert alone", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write(
+			"two.ics",
+			...timedEvent("first", "TEST First", START),
+			...timedEvent("second", "TEST Second", "20260102T101000Z"),
+		);
+		const context = await startedContext(fake, [path]);
+
+		vi.setSystemTime(at("09:59:45"));
+		await event.draw(context);
+		await event.onButton?.(ANY_BUTTON, context);
+
+		vi.setSystemTime(at("10:06:00"));
+		await event.draw(context);
+
+		expect(drawnName(fake.draws.at(-1)?.elements ?? [])).toBe("TEST Second");
+	});
+
+	// A silent alert is the same interruption as a noisy one, and a bar that
+	// only takes an answer while it is making a noise is a bar with a rule
+	// nobody was told.
+	it("dismisses a silent alert too", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write(
+			"silent-ack.ics",
+			...timedEvent("silent-ack", "TEST Silent Ack", START, [
+				"LOCATION:TEST Room 4",
+			]),
+		);
+		const context = await startedContext(fake, [path]);
+
+		vi.setSystemTime(at("09:40:00"));
+		await event.draw(context);
+
+		const result = await event.onButton?.(ANY_BUTTON, context);
+
+		expect(result?.redraw).toBe(true);
+		expect(fake.clears).toContainEqual({ application_name: event.name });
+
+		const drawnBefore = [...fake.draws];
+
+		await event.draw(context);
+
+		expect(fake.draws).toStrictEqual(drawnBefore);
 	});
 });

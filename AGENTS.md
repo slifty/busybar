@@ -41,6 +41,15 @@ reach for `StateStream` or `ScreenRenderer` here without first solving the
 browser-runtime dependency — the upstream README is explicit that a Node
 implementation of `StateStream` is possible but not planned.
 
+**The stream's protocol is usable from Node even though its class is not**, and
+`src/input/` relies on that. `StateStream` needs a `SharedWorker`; the wire
+underneath it is a plain WebSocket at `/api/status/ws` carrying protobuf, which
+Node connects to with the global `WebSocket` and no browser anywhere. That is the
+only reason button presses are readable at all — see "Reading the bar's buttons"
+below. The schema is not exported from the package; it is embedded in the
+worker's data URL, which is where the field numbers in `src/input/buttons.ts`
+came from.
+
 `BusyBar` connects to a device address (defaulting to `http://10.0.4.20` over
 USB-Ethernet), or to `https://api.busy.app` with a bearer token for remote
 proxy access. Local network access may additionally require an HTTP access
@@ -179,18 +188,23 @@ src/
 ├── constants/
 │   ├── device.ts       # Default address, draw priorities, display geometry
 │   └── time.ts         # Universal constants, not device- or program-specific
+├── input/
+│   ├── buttons.ts      # Which button a state message says was pressed
+│   ├── protobuf.ts     # Enough of the wire format to find one field
+│   └── stream.ts       # The device's state stream, and staying connected to it
 ├── test/               # Test tooling: helpers and factories
 └── programs/
     ├── index.ts        # Registry: name -> program, and what a list of names resolves to
     ├── event/
-    │   ├── README.md        # What it draws and why, its leads, its settings
-    │   ├── alerts.ts        # When an alert opens, ends, and chimes; which one owns the screen
-    │   ├── appointment.ts   # An appointment, its kind, and whether that kind makes a noise
-    │   ├── appointments.ts  # Reads every configured calendar and pools them
-    │   ├── calendar.ts      # Turns occurrences into appointments
-    │   ├── index.ts         # Draws the alert, plays the sound, schedules the next draw
-    │   ├── settings.ts      # What this program can be told to do
-    │   └── sound.ts         # The chime, and how it stops
+    │   ├── README.md            # What it draws and why, its leads, its settings
+    │   ├── acknowledgements.ts  # Which alerts a press has already answered
+    │   ├── alerts.ts            # When an alert opens, ends, and chimes; which one owns the screen
+    │   ├── appointment.ts       # An appointment, its kind, and whether that kind makes a noise
+    │   ├── appointments.ts      # Reads every configured calendar and pools them
+    │   ├── calendar.ts          # Turns occurrences into appointments
+    │   ├── index.ts             # Draws the alert, plays the sound, answers the button
+    │   ├── settings.ts          # What this program can be told to do
+    │   └── sound.ts             # The chime, and how it stops
     ├── focus/
     │   ├── README.md   # What it draws and why, its schedule sources, its settings
     │   ├── blocks.ts   # Picks the source, reads it, mirrors a calendar to the file
@@ -217,6 +231,16 @@ disagree about what to keep — an entry with no duration is nothing to count do
 and a perfectly good appointment to be on time for — so the drop rules live with
 the program, never in the reader. A third program reading calendars should add a
 mapper, not a parser.
+
+`src/input/` is the tool's only connection to the bar that is not HTTP, and it
+exists because there is no HTTP answer: `POST /api/input` sends a keypress _to_
+the device and nothing reports one coming back. It is deliberately small — a
+minimal wire reader, the four fields a press occupies, and a socket that
+reconnects — because the alternative was a protobuf runtime plus a copy of a
+firmware schema to keep in step. Adding a second thing that reads the stream
+(the switch position, the encoder, screen frames) means adding a decoder beside
+`buttons.ts`, not a second connection: the device caps how many clients may hold
+one, and the runner owns the only one.
 
 `src/constants/` is for values that were measured or given rather than decided:
 unit conversions in `time.ts`, facts about the hardware in `device.ts`. The
@@ -319,6 +343,31 @@ It is also where a program reads its settings, whether or not it reads them
 again later: once `start` is over, the runner holds the program's block to the
 keys it asked for and refuses the rest, so a setting first read during a draw
 would be reported as one the program does not have.
+
+**A program may react to the bar's buttons as well as to the clock**, by
+declaring an optional `onButton`. The handler does its own work and returns only
+whether the screen is now wrong (`{ redraw: true }`), which brings the next draw
+forward to now; it does not get to reschedule the program, because what the last
+draw asked for still stands.
+
+Four things about it are load-bearing:
+
+- **Declaring it is what opens the stream.** The runner opens one connection for
+  the whole process, and only if some program takes presses. A run of programs
+  that none of them do never opens a socket.
+- **Every listening program hears every press.** The device has three buttons and
+  no notion of which program's drawing is on screen, so deciding whether a press
+  is anything to do with you is the program's own business — and for a program
+  that is not currently drawing, the answer is no. A program that acts on every
+  press acknowledges alerts that are not there.
+- **Draws still never overlap.** A press can arrive mid-draw, and two draws in
+  flight would race for the same element ids, so the runner defers an
+  input-triggered draw until the one running has finished. That is what the
+  `drawing`/`redrawRequested` pair in `runProgram` is for.
+- **A press cannot fail the program.** There is no screen to leave broken and
+  nothing to retry against, so a handler that throws is logged and the run
+  carries on. The alternative would make the button the least reliable thing on
+  the bar.
 
 **A program can log, and should only do so for what it is carrying on from.**
 `ProgramContext` carries the runner's own `log`, so a program reports through
@@ -428,6 +477,50 @@ against firmware reporting `api_semver` 25.0.0.
 - **Errors are plain `Error`s.** `busy-lib` attaches `status`, `statusText`,
   and `body` via `Object.assign` and exports no error class, so HTTP status has
   to be read off an `unknown` by duck typing.
+- **Nothing on the device can be told to wait for a button press.** Elements
+  expire by `timeout` or `display_until` and by nothing else -- there is no
+  `on_press`, no `dismissible`, and no property anywhere that binds input to
+  what is on screen. `POST /api/audio/play` takes no loop, repeat or duration
+  either, so even a repeating chime is one request per repeat. An alert that
+  lasts until it is acknowledged therefore has to be held up by this process,
+  and dismissing it is a `DisplayClear` plus an `AudioStop` the moment the press
+  arrives. Worth knowing before designing anything on the assumption that the
+  device will "just handle it".
+- **A draw can blink the status LED.** `led_notification_color` on the draw
+  request, in `#RRGGBBAA`. Device-side attention with no round trips and no
+  expiry to manage, on any transport. Unused so far.
+- **HTTP access over Wi-Fi is off by default, and the same setting gates the
+  state stream.** `/api/access` has three modes -- `disabled`, `enabled`, and
+  `key` (4-10 digits) -- and is `disabled` out of the box. Measured against a bar
+  on both interfaces at once: on the Wi-Fi address `GET /api/status/device` and
+  the WebSocket upgrade at `/api/status/ws` both answer **403**, while over USB
+  they answer 200 and 101. The 403 on the _upgrade_ is the load-bearing part --
+  the Wi-Fi interface is serving the same HTTP server and the same routes, so
+  nothing here is USB-only by transport. It is USB-only because no credential is
+  sent: `src/index.ts` builds `BusyBar` with an address and nothing else. In
+  `key` mode the key goes in an `X-API-Token` header, and `busy-lib` puts it in a
+  `?x-api-token=` query parameter for the WebSocket, since a browser socket
+  cannot set headers -- whether the firmware accepts it there is **not**
+  verified.
+- **The cloud proxy's state stream is a different protocol from the device's.**
+  `RemoteStateStream` defaults to `isBinary: false` -- JSON rather than protobuf
+  -- and requires a `SUBSCRIBE {guid}` command. `src/input/` decodes protobuf, so
+  presses are readable over USB and over the local network, and **not** through
+  `api.busy.app` without a second wire format.
+- **Reading the bar's buttons needs the state stream, not HTTP.** `POST
+/api/input` sends a keypress _to_ the device; nothing reports one coming back,
+  and no `/api/status*` endpoint carries the buttons. They arrive as
+  `BSB_State.StateUpdate.input` on the WebSocket at `/api/status/ws`, which sends
+  nothing until the client sends `{"enable": true}`. Verified from a plain Node
+  `WebSocket`, with presses injected through `POST /api/input` echoing back on
+  the stream as `ButtonEvent`.
+- **proto3 does not write a field holding the zero of its type**, so the most
+  ordinary press there is — `ok` going down, since `OK` is button 0 and `PRESS` is
+  action 0 — arrives as a `ButtonEvent` with nothing in it at all. A decoder that
+  needed the fields present would drop exactly that press.
+- **The same stream carries screen frames**, as `StateUpdate.frame`, along with
+  wifi, power and brightness. Anything walking it for one field has to walk past
+  all of that, which is cheap and is what `src/input/protobuf.ts` is for.
 - **The firmware ships sounds as well as sprites.**
   `/ext/apps_assets/shared/sounds` holds `calendar_event_starts.snd`,
   `calendar_reminder_ends.snd` and `volume_change.snd`. Play one with `POST
@@ -435,11 +528,8 @@ against firmware reporting `api_semver` 25.0.0.
   upload the same way `shared/<file>.image` does. They are headerless 16-bit
   little-endian PCM at 44100 bytes per second, so the calendar chimes are about a
   second and a half.
-- **`POST /api/audio/play` takes no loop, repeat or duration**, so a sound that
-  is meant to keep going has to be asked for again and again by whatever wants
-  it. Nothing on the device will hold a noise going on your behalf.
 - **`DELETE /api/audio/play` stops whatever is playing, not your own sound.** It
-  takes no application name, and answers 410 when nothing is playing -- which is
+  takes no application name, and answers 410 when nothing is playing — which is
   the ordinary outcome of stopping a chime that has already finished, so it has
   to be tolerated rather than treated as a failure.
 - **A signal handler does not keep Node alive.** Registering `SIGINT` is not
@@ -609,17 +699,25 @@ are worth copying rather than reinventing:
   Assert against the recorded elements rather than against HTTP.
 - **Drive the runner through `src/test/runner.ts`.** It provides a program that
   really draws (`stubProgram`), a run that a test starts, advances, and stops,
-  and the queries for what each program drew, cleared, and logged. Two suites
-  use it — `runner.test.ts` for one program and `runner-programs.test.ts` for
-  several at once — which is why it is tooling rather than a fixture.
-- **Fake the clock, not the event loop.** Anything reading `new Date()` gets
-  `vi.useFakeTimers({ toFake: ["Date"] })` and `vi.setSystemTime(...)`. Faking
-  timers wholesale would stall the real file reads these suites await.
+  and the queries for what each program drew, cleared, and logged. Three suites
+  use it — `runner.test.ts` for one program, `runner-programs.test.ts` for
+  several at once, and `runner-buttons.test.ts` for presses — which is why it is
+  tooling rather than a fixture.
+- **Fake the socket, and write the protobuf by hand.** `src/test/socket.ts`
+  replaces the global `WebSocket` with something a test can open, deliver to, and
+  drop, which is the only way to reach the connection's life — the enable
+  message, the reconnect, the close on shutdown. `src/test/protobuf.ts` encodes
+  messages, and writing the encoder is what makes the decoder's tests worth
+  anything: a frame captured off a real bar would pass for the wrong reasons the
+  moment either side changed.
 - **`src/test/event.ts` holds what the `event` suites share** — calendars written
   into a `mkdtemp` directory, a context to draw with, and the queries for what
   landed on the display. Two suites want all of it, which is what makes it
-  tooling: `index.test.ts` for what is drawn and `alerting.test.ts` for the
-  noise.
+  tooling: `index.test.ts` for what is drawn and `alerting.test.ts` for the noise
+  and the button.
+- **Fake the clock, not the event loop.** Anything reading `new Date()` gets
+  `vi.useFakeTimers({ toFake: ["Date"] })` and `vi.setSystemTime(...)`. Faking
+  timers wholesale would stall the real file reads these suites await.
 - **Prefer a real temporary file to a mocked `fs`.** `blocks.test.ts` writes
   schedules into a `mkdtemp` directory and points a settings block built by
   `sectionOf` at them; the config suites do the same with real YAML files.

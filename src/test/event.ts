@@ -141,9 +141,11 @@ const contextFor = (
 
 // A context for a program that has been started.
 //
-// The program remembers whether it is making a noise, and `start` clears that,
-// so a suite about the sound begins a run rather than drawing into whatever the
-// last test left behind.
+// The program remembers what it has on screen and what has been acknowledged,
+// because a press has to be able to answer the alert you are looking at and
+// nothing hands the handler what that is. `start` clears both, so a suite about
+// the button begins a run rather than drawing into whatever the last test left
+// behind.
 const startedContext = async (
 	fake: FakeBar,
 	calendars: string[],

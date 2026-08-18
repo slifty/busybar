@@ -19,6 +19,10 @@ interface StubOptions {
 	readonly priority?: number;
 	readonly onDraw?: (attempt: number) => Promise<DrawResult>;
 	readonly start?: Program["start"];
+	// Left off, the stub does not take presses at all -- which is also what
+	// decides whether the runner opens the device's state stream, so it has to
+	// be possible to leave off.
+	readonly onButton?: Program["onButton"];
 }
 
 // A program that really draws, because half of what the runner does is decide
@@ -33,6 +37,7 @@ const stubProgram = ({
 	priority,
 	onDraw = async () => await Promise.resolve({}),
 	start,
+	onButton,
 }: StubOptions = {}): Program => {
 	let attempts = 0;
 
@@ -41,6 +46,7 @@ const stubProgram = ({
 		description: "a program that exists to be run",
 		priority,
 		start,
+		onButton,
 		draw: async (context) => {
 			attempts += 1;
 

@@ -2,8 +2,10 @@ import { once } from "node:events";
 import { DEFAULT_DRAW_PRIORITY } from "./constants/device.ts";
 import { clearApplication, isPreempted, showError } from "./display.ts";
 import { describe } from "./errors.ts";
+import { watchButtons } from "./input/stream.ts";
 import type { BusyBar } from "@busy-app/busy-lib";
 import type { Config } from "./config/index.ts";
+import type { Button } from "./input/buttons.ts";
 import type { Program, ProgramContext } from "./program.ts";
 
 // Node exits as soon as nothing is scheduled, and a registered signal handler
@@ -186,18 +188,21 @@ const startProgram = async ({
 	}
 };
 
+// One running program, as everything outside its draw loop sees it.
+interface Drawing {
+	// Settles when the run is over and whatever the program drew is cleared.
+	readonly finished: Promise<void>;
+	// Hands the program a press of one of the bar's buttons. Does nothing for
+	// a program that does not take them.
+	readonly press: (button: Button) => Promise<void>;
+}
+
 // Draws one program until the run is stopped, then clears what it drew.
-const runProgram = async (
+const runProgram = (
 	{ program, context }: Running,
 	signal: AbortSignal,
 	aborted: Promise<void>,
-): Promise<void> => {
-	// Nothing this run drew is on screen yet, so anything that is belongs to a
-	// run that is over -- most likely a failure the last one left up on its way
-	// out, which is exactly what it was left there for. Having been seen, it
-	// goes, rather than sitting underneath everything this run draws over it.
-	await clearDrawing(context);
-
+): Drawing => {
 	// Losing the screen to a focus session, or to a program of ours that
 	// outranks this one, is expected and can persist for as long as that lasts.
 	// Reporting the transitions keeps a program that retries every few seconds
@@ -265,33 +270,116 @@ const runProgram = async (
 		}
 	};
 
-	const drawAndSchedule = async (): Promise<void> => {
-		const delayMs = await drawOnce();
+	// Whether a draw is in flight, and whether one was asked for while it was.
+	//
+	// Draws must never overlap: they reuse the same element ids, so two in
+	// flight at once race to say what the last one of them left on screen.
+	// The draw loop alone could not do that -- it schedules the next draw only
+	// once the last has finished -- but a button press can arrive at any
+	// moment, and the whole point of it is that it does not wait for the
+	// scheduled draw. So a press that lands mid-draw asks for another one
+	// after it rather than starting its own.
+	let drawing = false;
+	let redrawWanted = false;
 
-		// A program that wants no further draws leaves nothing scheduled, and
-		// there is no point scheduling a draw we are already shutting down on.
-		if (delayMs === undefined || signal.aborted) {
+	// Both of these are read through a call rather than directly, because both
+	// change while a draw is awaited -- a press arrives, or the run is stopped
+	// -- and TypeScript's narrowing cannot see either happen. Read inline, the
+	// linter is right that the value it can prove is the only one there is; the
+	// call is what says otherwise.
+	const stopping = (): boolean => signal.aborted;
+
+	const redrawRequested = (): boolean => {
+		const wanted = redrawWanted;
+
+		redrawWanted = false;
+
+		return wanted;
+	};
+
+	const drawAndSchedule = async (): Promise<void> => {
+		if (drawing) {
+			redrawWanted = true;
+
 			return;
 		}
 
-		if (!Number.isFinite(delayMs)) {
-			context.log(
-				`ignoring an impossible next-draw delay of ${String(delayMs)}`,
-			);
-		}
+		drawing = true;
 
-		nextDraw = setTimeout(() => {
-			void drawAndSchedule();
-		}, delayFor(delayMs));
+		try {
+			do {
+				// Whatever was scheduled is being drawn now instead, and a
+				// timer left running would draw it a second time.
+				clearTimeout(nextDraw);
+
+				// eslint-disable-next-line no-await-in-loop -- the point of the loop is that a draw asked for during a draw happens after it, not alongside it
+				const delayMs = await drawOnce();
+
+				// A program that wants no further draws leaves nothing
+				// scheduled, and there is no point scheduling a draw we are
+				// already shutting down on.
+				if (delayMs === undefined || stopping()) {
+					continue;
+				}
+
+				if (!Number.isFinite(delayMs)) {
+					context.log(
+						`ignoring an impossible next-draw delay of ${String(delayMs)}`,
+					);
+				}
+
+				// eslint-disable-next-line require-atomic-updates -- only this loop assigns it, and the guard above is what keeps two of them from running at once
+				nextDraw = setTimeout(() => {
+					void drawAndSchedule();
+				}, delayFor(delayMs));
+			} while (redrawRequested());
+		} finally {
+			// eslint-disable-next-line require-atomic-updates -- nothing else sets this; the guard above is what makes that true
+			drawing = false;
+		}
 	};
 
-	try {
-		await drawAndSchedule();
-		await aborted;
-	} finally {
-		clearTimeout(nextDraw);
-		await cleanUp(context);
-	}
+	// Hands one press to the program, if it takes them.
+	//
+	// A press is not a draw and cannot fail like one: there is no screen to
+	// leave broken and nothing to retry against, so a handler that throws is
+	// logged and the run carries on. The alternative -- a press taking the
+	// program down -- would make the button the least reliable thing on the
+	// bar.
+	const press = async (button: Button): Promise<void> => {
+		if (program.onButton === undefined || stopping()) {
+			return;
+		}
+
+		try {
+			const { redraw = false } = await program.onButton(button, context);
+
+			if (redraw && !stopping()) {
+				await drawAndSchedule();
+			}
+		} catch (error) {
+			context.log(`could not handle the ${button} button: ${describe(error)}`);
+		}
+	};
+
+	const finished = (async (): Promise<void> => {
+		// Nothing this run drew is on screen yet, so anything that is belongs
+		// to a run that is over -- most likely a failure the last one left up
+		// on its way out, which is exactly what it was left there for. Having
+		// been seen, it goes, rather than sitting underneath everything this
+		// run draws over it.
+		await clearDrawing(context);
+
+		try {
+			await drawAndSchedule();
+			await aborted;
+		} finally {
+			clearTimeout(nextDraw);
+			await cleanUp(context);
+		}
+	})();
+
+	return { finished, press };
 };
 
 // Runs programs until SIGINT or SIGTERM, then clears whatever they drew.
@@ -361,15 +449,44 @@ const runPrograms = async (
 	process.once("SIGINT", stop);
 	process.once("SIGTERM", stop);
 
+	const drawings = started.map((entry) => ({
+		entry,
+		drawing: runProgram(entry, controller.signal, aborted),
+	}));
+
+	// One connection for the whole run, and only when something is listening.
+	//
+	// It is the tool's only non-HTTP connection to the bar, the device caps how
+	// many clients may hold one at once, and every program that takes presses
+	// wants the same stream -- so the runner owns it for the same reason it
+	// owns the draw loop, and a run of programs that none of them take presses
+	// never opens it at all.
+	if (started.some(({ program }) => program.onButton !== undefined)) {
+		watchButtons({
+			address: config.deviceAddress,
+			onPress: (button) => {
+				// Every listening program hears every press. Nothing here knows
+				// which of them a press was meant for, and the device knows
+				// less -- it has three buttons and no notion of what is on
+				// screen -- so deciding is the program's own business.
+				for (const { drawing } of drawings) {
+					void drawing.press(button);
+				}
+			},
+			log,
+			signal: controller.signal,
+		});
+	}
+
 	try {
 		// Each program runs to the end of the run and cleans up after itself.
 		// Nothing in a draw loop is expected to escape it -- failures are drawn
 		// and retried rather than thrown -- but one that did must not stop the
 		// others being waited for, and cleaned up, on the way out.
 		await Promise.all(
-			started.map(async (entry) => {
+			drawings.map(async ({ entry, drawing }) => {
 				try {
-					await runProgram(entry, controller.signal, aborted);
+					await drawing.finished;
 				} catch (error) {
 					entry.context.log(describe(error));
 				}

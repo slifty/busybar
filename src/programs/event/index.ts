@@ -8,16 +8,25 @@ import {
 	MS_PER_MINUTE,
 	MS_PER_SECOND,
 } from "../../constants/time.ts";
+import { clearApplication } from "../../display.ts";
 import { COUNTDOWN_METRICS, FONT_METRICS, widthOf } from "../../fonts.ts";
 import { fitText, maxLinesIn } from "../../text.ts";
+import { createAcknowledgements } from "./acknowledgements.ts";
 import { alertsFor, isSounding, nextOpensAt, showingAt } from "./alerts.ts";
 import { ALERT_COLOR } from "./appointment.ts";
 import { loadAppointments } from "./appointments.ts";
 import { CALENDARS_KEY, eventSettings } from "./settings.ts";
 import { REPEAT_MS, playAlert, stopAlert } from "./sound.ts";
-import type { DrawResult, Program, ProgramContext } from "../../program.ts";
+import type { Button } from "../../input/buttons.ts";
+import type {
+	DrawResult,
+	InputResult,
+	Program,
+	ProgramContext,
+} from "../../program.ts";
 import type { Region } from "../../text.ts";
 import type { Alert } from "./alerts.ts";
+import type { Appointment } from "./appointment.ts";
 
 const BORDER_ELEMENT_ID = "event-border";
 const NAME_ELEMENT_ID = "event-name";
@@ -214,12 +223,20 @@ const NO_FILL_COLORS = ["#00000000"];
 const unixSeconds = (date: Date): string =>
 	String(Math.ceil(date.getTime() / MS_PER_SECOND));
 
-// Whether the bar is currently making a noise.
+// What the program has on the screen, and whether it is making a noise.
 //
-// The chime is asked for again on every draw for as long as the window lasts,
-// so what this remembers is only whether there is one to stop when the window
-// closes.
+// The button is why this exists. A press has to be able to answer the alert
+// you are looking at, and nothing hands the handler what that is -- so the
+// draw leaves it here on its way out. Undefined is the ordinary state: this
+// program draws nothing at all most of the day, and a press then is a press
+// about something else.
+//
+// It is deliberately not the alert's identity written to disk anywhere.
+// Acknowledgement is a fact about the last few minutes, and a process that has
+// restarted was not there when the button was pressed.
+let onScreen: Appointment | undefined = undefined;
 let alarming = false;
+let acknowledged = createAcknowledgements();
 
 const drawAlert = async (
 	{ bar, applicationName, priority, log }: ProgramContext,
@@ -320,6 +337,11 @@ const drawAlert = async (
 		],
 	});
 
+	// Claimed only once the draw has landed. A draw that was refused put
+	// nothing on the screen, and a press answering an alert nobody can see
+	// would silence the one that is about to replace it.
+	onScreen = appointment;
+
 	// Played on every draw for as long as the window lasts, rather than once
 	// when it opens. The clip is short and the alert is supposed to keep
 	// asking until it is answered, so the repeat is the point -- and the draw
@@ -364,10 +386,13 @@ const drawAlert = async (
 // has yet to fill in produces, which makes it far more often a mistake than a
 // request.
 const start = async (context: ProgramContext): Promise<void> => {
-	// A run starts with the bar quiet. Said here rather than left to the
-	// initialiser so that a second run in the same process -- which is every run
-	// after the first in the test suite -- does not inherit the first one's.
+	// A run starts having acknowledged nothing and shown nothing. Said here
+	// rather than left to the initialisers so that a second run in the same
+	// process -- which is every run after the first in the test suite -- is not
+	// answering the first one's alerts.
+	onScreen = undefined;
 	alarming = false;
+	acknowledged = createAcknowledgements();
 
 	const settings = eventSettings(context.config);
 
@@ -392,7 +417,16 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	// calendars belong to whatever is filling them in, and a meeting added
 	// this morning has to reach a process that started yesterday.
 	const appointments = await loadAppointments(settings);
-	const alerts = alertsFor(appointments, settings);
+
+	acknowledged.keepOnly(appointments);
+
+	// An acknowledged appointment is not an alert at all. Filtering here rather
+	// than at the point of drawing means it is also not what the program waits
+	// for: an alert you have answered must not be what wakes it up.
+	const alerts = alertsFor(appointments, settings).filter(
+		({ appointment }) => !acknowledged.has(appointment),
+	);
+
 	const showing = showingAt(alerts, now);
 
 	if (showing !== undefined) {
@@ -404,14 +438,72 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 		await stopAlert(context.bar, context.log);
 	}
 
-	// Between alerts there is nothing to draw and nothing to clear: the last
-	// alert's elements were given its end as their expiry, so the device has
-	// already taken them down and handed the screen back.
+	// An alert that was up and is not any more comes down here, rather than
+	// being left to the expiry it was drawn with.
+	//
+	// Almost always the device has already taken it down: the elements carry the
+	// alert's end as their `display_until` and this draw was scheduled for that
+	// instant, so the clear is a formality. What it is actually for is the case
+	// where the alert stopped being one for a reason the device knows nothing
+	// about -- the meeting was cancelled, or moved, or the calendar it came from
+	// stopped mentioning it -- where the expiry is still minutes off and nothing
+	// else would take a yellow frame off the screen for a meeting that is not
+	// happening.
+	if (onScreen !== undefined) {
+		onScreen = undefined;
+		await clearApplication(context.bar, context.applicationName);
+	}
+
+	// Otherwise there is nothing to draw and nothing to clear.
 	const opens = nextOpensAt(alerts, now);
 	const untilNextAlert =
 		opens === undefined ? Infinity : opens.getTime() - now.getTime();
 
 	return { nextDrawInMs: Math.min(untilNextAlert, IDLE_REFRESH_MS) };
+};
+
+// A press of any of the bar's three buttons answers the alert on screen.
+//
+// Any of them, deliberately. The bar has three buttons and this program has
+// one thing to say, and a rule about which of them counts is a rule you have
+// to remember at the exact moment you are late for something. The press means
+// "I have seen it", and there is nothing else it could mean while an alert is
+// up.
+//
+// It answers whatever is on screen, sounding or not. Acknowledgement was asked
+// for so that a noise could be stopped, but a bar that only takes an answer
+// while it is making a noise is a bar with a rule nobody was told: the yellow
+// frame is the same interruption either way, and being able to dismiss the one
+// that chimes and not the one that does not would read as a fault.
+//
+// A press with nothing on screen does nothing at all. Every program that takes
+// presses hears every press, so most of what arrives here is somebody using
+// the bar for something else entirely.
+const onButton = async (
+	button: Button,
+	{ bar, applicationName, log }: ProgramContext,
+): Promise<InputResult> => {
+	if (onScreen === undefined) {
+		return {};
+	}
+
+	acknowledged.acknowledge(onScreen);
+	onScreen = undefined;
+
+	if (alarming) {
+		alarming = false;
+		await stopAlert(bar, log);
+	}
+
+	// The elements were drawn to expire when the alert would have ended, so
+	// they outlast being answered unless they are taken down. This is the one
+	// place this program clears the screen: every other ending is an expiry the
+	// device performs on its own.
+	await clearApplication(bar, applicationName);
+
+	log(`acknowledged by the ${button} button`);
+
+	return { redraw: true };
 };
 
 const event: Program = {
@@ -420,6 +512,7 @@ const event: Program = {
 	priority: ALERT_PRIORITY,
 	start,
 	draw,
+	onButton,
 };
 
 export { ALERT_PRIORITY, IDLE_REFRESH_MS, event };

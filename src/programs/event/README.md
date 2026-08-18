@@ -180,34 +180,97 @@ calendar, so it is deliberately not faster.
 
 ## How an alert ends
 
-Two ways, and the ordinary one is that it expires. Every element is drawn with
+Three ways, and the ordinary one is that it expires. Every element is drawn with
 the alert's end as its `display_until`, so the device takes it down itself, on
 time, and the built-in clock comes back on its own. A process that dies
 mid-alert cannot leave one stranded on the display.
 
 When the alert ends depends on whether it makes a noise:
 
-| Alert                | Ends                        |
-| -------------------- | --------------------------- |
-| Somewhere to be      | At the appointment's start  |
-| Anything that chimes | Two minutes after the start |
+| Alert                | Ends                                             |
+| -------------------- | ------------------------------------------------ |
+| Somewhere to be      | At the appointment's start                       |
+| Anything that chimes | Two minutes after the start, unless acknowledged |
 
 A silent alert's whole job is getting you there on time, which is over once it
 is time — so the countdown reaching zero and the alert disappearing are the same
-instant. One that chimes has to outlast the start, because the screen going
-quiet while the bar is still shouting would be the bar contradicting itself.
-Past the start the countdown reads `00:00`: the device clamps it rather than
-counting negative, which is exactly right — you are late, and by how much is not
-the useful number.
+instant. One that chimes has to outlast the start, because it is supposed to
+continue until somebody says they have seen it, and the screen going quiet while
+the bar is still shouting would be the bar contradicting itself. Past the start
+the countdown reads `00:00`: the device clamps it rather than counting negative,
+which is exactly right — you are late, and by how much is not the useful number.
 
-**The time box is the second way, and for now it is the only thing that stops a
-chime.** The alert was specified to continue until somebody says they have seen
-it, and nothing on the bar can say that yet — so a limit is doing the whole job
-of ending it, and would still be needed once a button can, because an unattended
-bar acknowledges nothing. Two minutes is long enough to reach the bar from the
-next room and short enough that a bar left alone falls quiet before anybody
-minds. `sound.linger` moves it, and `0` makes a chiming alert end at the start
-like a silent one.
+One case does not wait for the expiry: an alert whose appointment has stopped
+being one. If the meeting is cancelled, moved, or the calendar simply stops
+mentioning it, the next draw takes the alert down itself — the device knows
+nothing about the calendar, so its expiry would leave a yellow frame up for a
+meeting that is not happening.
+
+**The time box is the third way, and it exists because an unattended bar
+acknowledges nothing.** Without a limit, one appointment nobody was there for
+leaves the bar chiming until somebody comes back to the desk, which is a worse
+thing to walk in on than a missed meeting. Two minutes is long enough to reach
+the bar from the next room and short enough that a bar left alone falls quiet
+before anybody minds. `sound.linger` moves it, and `0` makes a chiming alert end
+at the start like a silent one.
+
+## Acknowledging it
+
+**Press any of the bar's three buttons and the alert is answered:** the sound
+stops, the alert comes off the screen, and neither comes back for that
+appointment.
+
+Any of them, deliberately. The bar has three buttons and this program has one
+thing to say, and a rule about which one counts is a rule you have to remember
+at the exact moment you are late for something.
+
+It answers whatever is on screen, chiming or not. Acknowledgement was asked for
+so that a noise could be stopped, but a bar that only takes an answer while it
+is making a noise is a bar with a rule nobody was told — the yellow frame is the
+same interruption either way.
+
+Acknowledging is about one alert rather than about the day. The next appointment
+gets its own interruption, and a meeting moved to a different time is a
+different alert.
+
+It is remembered in memory and nowhere else. Acknowledgement is a fact about the
+last few minutes, and a process that has restarted was not there when the button
+was pressed.
+
+### Getting a press into a Node process
+
+This is the one part of the tool that does not talk HTTP, and it is worth
+knowing why, because the HTTP API looks like it should be enough and is not:
+
+- **`POST /api/input` is the wrong direction.** It sends a keypress _to_ the
+  bar. Nothing reports one coming back, and no `/api/status` endpoint carries the
+  buttons.
+- **The device's state stream does carry them**, as
+  `BSB_State.StateUpdate.input` on the WebSocket at `/api/status/ws`.
+- **`busy-lib` cannot read that stream from Node.** Its `StateStream` runs in a
+  `SharedWorker`, which is browser-only.
+
+The protocol underneath is not browser-only, though. A plain `WebSocket`
+connects, `{"enable": true}` starts the flow, and the four fields a press
+occupies decode without a protobuf runtime — which is what
+[`src/input/`](../../input/) does. The runner owns one connection for the whole
+process and opens it only if some program declares `onButton`, so a run with no
+program listening never opens a socket at all.
+
+The cost of this is stated rather than hidden: the alert's screen and sound need
+only HTTP, and acknowledgement needs the socket. A bar whose buttons cannot be
+heard still draws and chimes exactly as it would otherwise — it just cannot be
+answered, and falls back to the time box.
+
+**The socket is not a USB-only thing.** It is the same HTTP server as everything
+else, on the same routes, behind the same access gate: with `/api/access` set to
+`disabled` the Wi-Fi address answers 403 to the WebSocket upgrade and to every
+other request alike, and over USB it answers 101 and 200. So the stream follows
+whatever transport the rest of the tool is on. What is missing for a bar reached
+over the network is a credential rather than a capability — see the device notes
+in [`AGENTS.md`](../../../AGENTS.md). The one place this does not hold is the
+cloud proxy, whose stream is JSON rather than protobuf and which this decoder
+would not read.
 
 ## When two alerts overlap
 
@@ -296,7 +359,7 @@ countdown on its own in between, so a typical alert is one draw.
 | `leads.url`     | `5`     | Minutes of warning for one with a link                                                     |
 | `leads.plain`   | `5`     | Minutes of warning for one that says neither                                               |
 | `sound.lead`    | `30`    | Seconds before the start that an alert with no physical location starts chiming            |
-| `sound.linger`  | `120`   | Seconds past the start it keeps chiming. `0` ends it at the start                          |
+| `sound.linger`  | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
 
 An alert is always on screen by the time it chimes, whatever the two blocks say.
 Nothing stops `leads.url` being shorter than `sound.lead`, and a bar chiming
