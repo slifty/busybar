@@ -205,6 +205,20 @@ the wrong impression for the one moment the bar is trying to say you are late. A
 word says it without arithmetic, and only an alert that outlasts its start ever
 shows it: one with somewhere to be has already gone.
 
+**The frame blinks while this lasts**, half a second lit and half a second dark.
+The frame rather than the whole alert, and rather than the word: a name and a
+`NOW` that came and went would be a message you have to wait to read, which is
+the opposite of what an alert is for. Everything stays legible the entire time
+and only the border moves — and the border is already the part doing the
+interrupting, so it is the part there is left to escalate.
+
+That costs a draw twice a second for as long as it goes on, which is bounded by
+`sound.linger` and is the most urgent state the tool has. It also means the
+chime can no longer ride on the draw loop: it used to play once per draw, which
+gave a ten-second repeat only because the draws happened to be ten seconds
+apart, and would now be two solid minutes of noise. What the alert repeats and
+what the screen repeats are tracked separately.
+
 `NOW` is set in `small`, which is exactly the five rows the digits gave back, so
 nothing above it moves. The countdown is parked off the left of the display
 rather than left out of the draw — an element id outlives the drawing that

@@ -103,6 +103,22 @@ const LAST_PIXEL = 1;
 // What the countdown would have left to run once the appointment has begun.
 const NO_TIME_LEFT = 0;
 
+// How long the frame stays lit, and then dark, once the appointment has begun.
+//
+// The frame blinks rather than the whole alert, and rather than the word. A
+// name and a "NOW" that came and went would be a message you have to wait to
+// read, which is the opposite of what an alert is for -- everything stays
+// legible the entire time and only the border moves. It is also the part
+// already doing the interrupting: two pixels of yellow around the edge is what
+// makes this readable from across the room, so it is what there is to escalate.
+//
+// Half a second is slow enough to read as deliberate rather than as a fault,
+// and it only ever happens while an appointment has begun and nobody has
+// answered -- which is bounded by `sound.linger`.
+const BLINK_MS = 500;
+const BLINK_PHASES = 2;
+const DARK_PHASE = 1;
+
 // Halving what is left over puts the same amount on each side.
 const SIDES = 2;
 
@@ -228,10 +244,13 @@ const OFF_SCREEN_X = -FRONT_DISPLAY_WIDTH;
 
 const NAME_COLOR = "#FFFFFFFF";
 
+// Fully transparent: a colour that draws nothing.
+const INVISIBLE = "#00000000";
+
 // The frame carries the colour, so it is drawn as an outline and nothing else.
 // A fill colour is still required by the generated types even where there is
 // no fill to apply.
-const NO_FILL_COLORS = ["#00000000"];
+const NO_FILL_COLORS = [INVISIBLE];
 
 // The countdown element takes its target as seconds-based Unix time, in a
 // string, and the device ticks it down by itself from there.
@@ -255,22 +274,80 @@ const unixSeconds = (date: Date): string =>
 // restarted was not there when the button was pressed.
 let onScreen: Appointment | undefined = undefined;
 let alarming = false;
+
+// When the chime last played.
+//
+// The repeat used to be "once per draw while sounding", which was only ever
+// right because the draw loop happened to run at the repeat interval. It does
+// not any more: the frame blinks twice a second once an appointment has begun,
+// and a chime on every one of those draws would be a solid two minutes of
+// noise. What the alert repeats and what the screen repeats are two different
+// rhythms, so the chime keeps its own.
+let lastChimeAt: Date | undefined = undefined;
 let acknowledged = createAcknowledgements();
 
 // The calendars, read on their own clock rather than on the draw's.
 const refresher = createRefresher();
 
+// Keeps the chime going, or stops it, and says how long until the next one.
+//
+// Separate from the draw because the two used to be the same thing, and were
+// only ever right by coincidence: "play on every draw while sounding" gave a
+// ten second repeat because the draw loop happened to run every ten seconds.
+// Once the frame blinks twice a second that coincidence becomes two solid
+// minutes of noise, so what the alert repeats and what the screen repeats are
+// tracked apart.
+const keepSounding = async (
+	{ bar, applicationName, log }: ProgramContext,
+	sounding: boolean,
+	now: Date,
+): Promise<number> => {
+	if (!sounding) {
+		if (alarming) {
+			await stopAlert(bar, log);
+		}
+
+		// eslint-disable-next-line require-atomic-updates -- a program's draws never overlap, so there is no interleaved update to lose
+		alarming = false;
+		// Forgotten while silent, so the next alert to open chimes at once
+		// rather than waiting out the gap left by the last one.
+		lastChimeAt = undefined;
+
+		return Infinity;
+	}
+
+	if (
+		lastChimeAt === undefined ||
+		now.getTime() - lastChimeAt.getTime() >= REPEAT_MS
+	) {
+		await playAlert(bar, applicationName);
+		// eslint-disable-next-line require-atomic-updates -- as above
+		lastChimeAt = now;
+	}
+
+	alarming = true;
+
+	return lastChimeAt.getTime() + REPEAT_MS - now.getTime();
+};
+
 const drawAlert = async (
-	{ bar, applicationName, priority, log }: ProgramContext,
+	context: ProgramContext,
 	alert: Alert,
 	alerts: readonly Alert[],
 	now: Date,
 ): Promise<DrawResult> => {
+	const { bar, applicationName, priority } = context;
 	const { appointment, endsAt, soundsFrom } = alert;
 	const remainingMs = appointment.start.getTime() - now.getTime();
 
 	// Past the start and still up, which only a chiming alert ever is.
 	const begun = remainingMs <= NO_TIME_LEFT;
+
+	// Worked out from the clock rather than toggled, so that the frame is in
+	// the same phase whichever draw happens to land -- a flag would blink on
+	// the draws rather than on the time, and the draws are not evenly spaced.
+	const dark =
+		begun && Math.floor(now.getTime() / BLINK_MS) % BLINK_PHASES === DARK_PHASE;
 
 	// Handing the device the end as an expiry means it takes the alert down
 	// itself, on time, even if this process is not around to do it -- and the
@@ -310,7 +387,7 @@ const drawAlert = async (
 				fill: "none",
 				fill_colors: NO_FILL_COLORS,
 				border_width: BORDER_THICKNESS,
-				border_color: ALERT_COLOR,
+				border_color: dark ? INVISIBLE : ALERT_COLOR,
 				display: "front",
 				align: "top_left",
 				display_until: displayUntil,
@@ -384,16 +461,11 @@ const drawAlert = async (
 	// when it opens. The clip is short and the alert is supposed to keep
 	// asking until it is answered, so the repeat is the point -- and the draw
 	// loop is what the program has to time anything with.
-	const sounding = isSounding(alert, now);
-
-	if (sounding) {
-		await playAlert(bar, applicationName);
-	} else if (alarming) {
-		await stopAlert(bar, log);
-	}
-
-	// eslint-disable-next-line require-atomic-updates -- a program's draws never overlap, so there is no interleaved update to lose
-	alarming = sounding;
+	const untilNextChime = await keepSounding(
+		context,
+		isSounding(alert, now),
+		now,
+	);
 
 	// Four things can change what is on screen, and the next draw is whichever
 	// comes first: this alert ending, it starting to make a noise, the
@@ -409,12 +481,15 @@ const drawAlert = async (
 				: [],
 	);
 
-	const untilMs = Math.min(
-		...instants.map((instant) => instant.getTime() - now.getTime()),
-		sounding ? REPEAT_MS : Infinity,
-	);
-
-	return { nextDrawInMs: untilMs };
+	// The chime and the blink each keep their own rhythm, and the next draw is
+	// whichever of everything comes first.
+	return {
+		nextDrawInMs: Math.min(
+			...instants.map((instant) => instant.getTime() - now.getTime()),
+			untilNextChime,
+			begun ? BLINK_MS : Infinity,
+		),
+	};
 };
 
 // The first read happens here, and fails the program if it fails: a feed that
@@ -436,6 +511,7 @@ const start = async (context: ProgramContext): Promise<void> => {
 	// answering the first one's alerts.
 	onScreen = undefined;
 	alarming = false;
+	lastChimeAt = undefined;
 	acknowledged = createAcknowledgements();
 
 	const settings = eventSettings(context.config);
@@ -489,6 +565,7 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 
 	if (alarming) {
 		alarming = false;
+		lastChimeAt = undefined;
 		await stopAlert(context.bar, context.log);
 	}
 
@@ -548,6 +625,7 @@ const onButton = async (
 
 	if (alarming) {
 		alarming = false;
+		lastChimeAt = undefined;
 		await stopAlert(bar, log);
 	}
 
@@ -575,4 +653,4 @@ const event: Program = {
 	onButton,
 };
 
-export { ALERT_PRIORITY, event };
+export { ALERT_PRIORITY, INVISIBLE, event };

@@ -193,6 +193,38 @@ const startedContext = async (
 	return context;
 };
 
+interface Watching {
+	readonly fake: FakeBar;
+	readonly calendars: Calendars;
+	// Names the calendar file and the appointment in it, so a failure says
+	// which case wrote it.
+	readonly name: string;
+	readonly start: string;
+	readonly settings?: Record<string, unknown>;
+	readonly extra?: string[];
+}
+
+// A started program watching one invented appointment.
+//
+// Started rather than merely handed a context, because reading the calendars is
+// `start`'s job -- and the clock has to already say the right day when it runs,
+// since the reader keeps only what falls near now.
+const watchingOne = async ({
+	fake,
+	calendars,
+	name,
+	start,
+	settings = {},
+	extra = [],
+}: Watching): Promise<ProgramContext> => {
+	const path = await calendars.write(
+		`${name}.ics`,
+		...timedEvent(name, `TEST ${name}`, start, extra),
+	);
+
+	return await startedContext(fake, [path], settings);
+};
+
 export {
 	caption,
 	contextFor,
@@ -206,6 +238,7 @@ export {
 	startedContext,
 	stockSoundsPlayed,
 	timedEvent,
+	watchingOne,
 	unixSeconds,
 };
 export type { Calendars, Element, Elements, Signals, TextElement };
