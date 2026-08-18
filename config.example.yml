@@ -85,6 +85,17 @@ programs:
   #     url: 5
   #     plain: 5
   #
+  #   # How often the calendars are read again, in minutes.
+  #   #
+  #   # Reading is on its own clock and has nothing to do with drawing: the bar
+  #   # is not asked to redraw to find out whether the day changed, and a feed
+  #   # is not fetched again because a chime repeated. Anything added to a
+  #   # calendar is invisible until the next read, so this is the longest a
+  #   # meeting entered on your phone can take to reach the bar -- and each read
+  #   # is a fetch of every feed in full, which for a Google calendar is a
+  #   # year's history, so it is not free either.
+  #   refresh: 5
+  #
   #   # The noise an appointment with no physical location makes, in seconds.
   #   #
   #   # Only those: something across town is missed half an hour before it

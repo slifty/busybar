@@ -203,6 +203,7 @@ src/
     │   ├── appointments.ts      # Reads every configured calendar and pools them
     │   ├── calendar.ts          # Turns occurrences into appointments
     │   ├── index.ts             # Draws the alert, plays the sound, answers the button
+    │   ├── refresh.ts           # Reads the calendars on its own clock, not the draw's
     │   ├── settings.ts          # What this program can be told to do
     │   └── sound.ts             # The chime, and how it stops
     ├── focus/
@@ -320,6 +321,17 @@ under any other name is one the program can never draw over); it clears the
 program's elements first rather than overlaying them; and it is taken down
 before each retry rather than after a success, or it would block the recovery
 that clears it. See `showError` in `src/display.ts`.
+
+**What a program works from is not read on the draw loop.** `event` reads its
+calendars on an interval of its own and `draw` uses whatever was last read. That
+is a correction rather than an optimisation: drawing is about the next few
+seconds and reading is about the next few hours, and tying them together means a
+program with nothing to show has to be woken purely to look at a feed, while one
+drawing every ten seconds re-fetches everything every ten seconds. The refresher
+calls `redraw()` when what it read actually changed, and keeps a failure for the
+next draw to throw, so an unreadable feed still reaches the display. `focus`
+still reads its schedule on every draw and would benefit from the same
+treatment.
 
 **Programs schedule themselves.** `draw` returns a `DrawResult`, whose
 `nextDrawInMs` says how long the runner should wait before drawing again.

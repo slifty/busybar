@@ -11,9 +11,24 @@ import type { Kind } from "./appointment.ts";
 
 const CALENDARS_KEY = "calendars";
 const LEADS_KEY = "leads";
+const REFRESH_KEY = "refresh";
 const SOUND_KEY = "sound";
 const SOUND_LEAD_KEY = "lead";
 const SOUND_LINGER_KEY = "linger";
+
+// How often the calendars are read again, in minutes.
+//
+// Five is a compromise between two costs that both fall on somebody else. Each
+// read is a fetch of every configured feed, which for a Google calendar is
+// megabytes of a whole year's history; and anything added to a calendar is
+// invisible to the bar until the next one. Five minutes means a meeting entered
+// on the way to it is seen in time to be warned about, without asking a feed
+// for a year of history twelve times an hour.
+//
+// It is the one number here that is about somebody else's server rather than
+// about your day, which is why it is worth being able to move without editing
+// the program.
+const DEFAULT_REFRESH_MINUTES = 5;
 
 // How long before the start an alert with no physical location begins to make
 // a noise, in seconds.
@@ -59,6 +74,8 @@ interface EventSettings {
 	// knows how far away their meetings are.
 	readonly leads: Readonly<Record<Kind, number>>;
 	readonly sound: SoundSettings;
+	// How often to read the calendars again, in milliseconds.
+	readonly refreshMs: number;
 	// Where a setting is written, so that a message about a feed that could
 	// not be read can say which line to go and fix.
 	readonly where: (key: string) => string;
@@ -104,14 +121,18 @@ const eventSettings = (config: ConfigSection): EventSettings => ({
 	calendars: config.strings(CALENDARS_KEY),
 	leads: leadsIn(config.section(LEADS_KEY)),
 	sound: soundIn(config.section(SOUND_KEY)),
+	refreshMs:
+		config.number(REFRESH_KEY, DEFAULT_REFRESH_MINUTES) * MS_PER_MINUTE,
 	where: config.where,
 });
 
 export {
 	CALENDARS_KEY,
+	DEFAULT_REFRESH_MINUTES,
 	DEFAULT_SOUND_LEAD_SECONDS,
 	DEFAULT_SOUND_LINGER_SECONDS,
 	LEADS_KEY,
+	REFRESH_KEY,
 	SOUND_KEY,
 	eventSettings,
 };

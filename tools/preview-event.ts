@@ -164,6 +164,10 @@ try {
 		await bar.DisplayClear({ application_name: event.name });
 		await sleep(200);
 
+		// Started rather than only drawn, because reading the calendars is
+		// `start`'s job and `draw` uses whatever was last read. Each case writes
+		// a different calendar, so each case is its own run.
+		await event.start?.(context);
 		await event.draw(context);
 
 		// The device needs a moment to put the elements up before the frame is

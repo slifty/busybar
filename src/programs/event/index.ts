@@ -3,18 +3,14 @@ import {
 	FRONT_DISPLAY_HEIGHT,
 	FRONT_DISPLAY_WIDTH,
 } from "../../constants/device.ts";
-import {
-	MS_PER_HOUR,
-	MS_PER_MINUTE,
-	MS_PER_SECOND,
-} from "../../constants/time.ts";
+import { MS_PER_HOUR, MS_PER_SECOND } from "../../constants/time.ts";
 import { clearApplication } from "../../display.ts";
 import { COUNTDOWN_METRICS, FONT_METRICS, widthOf } from "../../fonts.ts";
 import { fitText, maxLinesIn } from "../../text.ts";
 import { createAcknowledgements } from "./acknowledgements.ts";
 import { alertsFor, isSounding, nextOpensAt, showingAt } from "./alerts.ts";
 import { ALERT_COLOR } from "./appointment.ts";
-import { loadAppointments } from "./appointments.ts";
+import { createRefresher } from "./refresh.ts";
 import { CALENDARS_KEY, eventSettings } from "./settings.ts";
 import { REPEAT_MS, playAlert, stopAlert } from "./sound.ts";
 import type { Button } from "../../input/buttons.ts";
@@ -52,18 +48,6 @@ const ALERT_PRIORITY = BUSY_SESSION_PRIORITY + PRIORITY_STEP;
 
 // The length of a list with nothing in it.
 const NO_CALENDARS = 0;
-
-// How long the program will go without reading the calendars again while it
-// has nothing on screen.
-//
-// The calendars are written by something else and change on their own, so
-// waiting only for the next alert we can currently see would miss a meeting
-// added ahead of it -- and, on a day whose appointments are all done, would
-// mean never looking again at all. This is a floor on curiosity, not a poll:
-// it applies only between alerts, where waking costs a fetch and no device
-// traffic.
-const IDLE_REFRESH_MINUTES = 15;
-const IDLE_REFRESH_MS = IDLE_REFRESH_MINUTES * MS_PER_MINUTE;
 
 // The alert is two stacked rows inside a thick frame: the name across the whole
 // width, and how long until it underneath.
@@ -238,6 +222,9 @@ let onScreen: Appointment | undefined = undefined;
 let alarming = false;
 let acknowledged = createAcknowledgements();
 
+// The calendars, read on their own clock rather than on the draw's.
+const refresher = createRefresher();
+
 const drawAlert = async (
 	{ bar, applicationName, priority, log }: ProgramContext,
 	alert: Alert,
@@ -375,10 +362,12 @@ const drawAlert = async (
 	return { nextDrawInMs: untilMs };
 };
 
-// Reading the calendars here is a check, not a cache. `draw` reads them again
-// every time; what this buys is that a feed that cannot be reached, or a
-// config block naming none at all, stops the program now, with the reason,
-// rather than being retried every few seconds behind a bar that sits dark.
+// The first read happens here, and fails the program if it fails: a feed that
+// cannot be reached, or a config block naming none at all, stops things now,
+// with the reason, rather than being retried every few seconds behind a bar
+// that sits dark.
+//
+// Every read after this one is the refresher's, on its own interval.
 //
 // A program watching no calendars is refused rather than run. It would be
 // indistinguishable from a working one -- silence is what this program looks
@@ -402,21 +391,31 @@ const start = async (context: ProgramContext): Promise<void> => {
 		);
 	}
 
-	await loadAppointments(settings);
+	await refresher.begin(settings, context);
 };
 
 const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	const now = new Date();
 
+	// A calendar that could not be read belongs on the bar, not only in a log.
+	// Silence is what this program looks like when it is working, so a bar
+	// showing nothing because it has not managed to read a feed since breakfast
+	// is indistinguishable from a quiet afternoon -- which is the whole reason
+	// failures are drawn.
+	const failure = refresher.failure();
+
+	if (failure !== undefined) {
+		throw failure;
+	}
+
 	// Taken from the block again rather than held from `start`, which costs
-	// nothing: the file was read once, at startup, and this is one key out of
-	// what it said.
+	// nothing: the file was read once, at startup, and this is a few keys out
+	// of what it said.
 	const settings = eventSettings(context.config);
 
-	// Read afresh on every draw rather than resolved once at startup. The
-	// calendars belong to whatever is filling them in, and a meeting added
-	// this morning has to reach a process that started yesterday.
-	const appointments = await loadAppointments(settings);
+	// Whatever the refresher last read. Nothing is fetched here: how fresh the
+	// calendars are is its own question, asked on its own clock.
+	const appointments = refresher.appointments();
 
 	acknowledged.keepOnly(appointments);
 
@@ -446,21 +445,22 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	// instant, so the clear is a formality. What it is actually for is the case
 	// where the alert stopped being one for a reason the device knows nothing
 	// about -- the meeting was cancelled, or moved, or the calendar it came from
-	// stopped mentioning it -- where the expiry is still minutes off and nothing
-	// else would take a yellow frame off the screen for a meeting that is not
-	// happening.
+	// stopped mentioning it.
 	if (onScreen !== undefined) {
 		onScreen = undefined;
 		await clearApplication(context.bar, context.applicationName);
 		context.releaseScreen();
 	}
 
-	// Otherwise there is nothing to draw and nothing to clear.
+	// Otherwise there is nothing to draw and nothing to clear, and -- now that
+	// reading the calendars is not this loop's job -- nothing to come back for
+	// until an alert is due. A day with nothing left in it asks for no draws at
+	// all; the refresher is what notices when that stops being true.
 	const opens = nextOpensAt(alerts, now);
-	const untilNextAlert =
-		opens === undefined ? Infinity : opens.getTime() - now.getTime();
 
-	return { nextDrawInMs: Math.min(untilNextAlert, IDLE_REFRESH_MS) };
+	return opens === undefined
+		? {}
+		: { nextDrawInMs: opens.getTime() - now.getTime() };
 };
 
 // A press of any of the bar's three buttons answers the alert on screen.
@@ -520,4 +520,4 @@ const event: Program = {
 	onButton,
 };
 
-export { ALERT_PRIORITY, IDLE_REFRESH_MS, event };
+export { ALERT_PRIORITY, event };

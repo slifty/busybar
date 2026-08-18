@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import {
 	afterAll,
 	afterEach,
@@ -27,6 +28,9 @@ import type { FakeBar } from "../../../test/bar.ts";
 // is pressed is deliberately not part of any of this.
 const ANY_BUTTON = "ok";
 
+// Long enough for a refresher on a very short interval to have read again.
+const REFRESHED_MS = 250;
+
 // A ten o'clock appointment, which is what all of these are about.
 const START = "20260102T100000Z";
 
@@ -40,6 +44,11 @@ afterAll(async () => {
 
 beforeEach(() => {
 	vi.useFakeTimers({ toFake: ["Date"] });
+
+	// Before anything is started, because starting is what reads the calendars
+	// and the reader keeps only what falls near now. Each test moves the clock
+	// on to the moment it is actually about.
+	vi.setSystemTime(at("09:00:00"));
 });
 
 afterEach(() => {
@@ -194,13 +203,19 @@ describe("an alert that stops being one", () => {
 	// What the clear is actually for. The expiry is still minutes off, the
 	// device knows nothing about the calendar, and nothing else would take a
 	// yellow frame off the screen for a meeting that is not happening.
+	//
+	// Driven through the refresher on a very short interval, because noticing
+	// the calendar changed is its job now rather than the draw's -- which is
+	// the whole point of the separation, and worth one test that proves the two
+	// halves meet.
 	it("comes down when the calendar stops mentioning the meeting", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
 			"cancelled.ics",
 			...timedEvent("cancelled", "TEST Cancelled", START),
 		);
-		const context = await startedContext(fake, [path]);
+		// A twentieth of a second, expressed in the minutes the setting takes.
+		const context = await startedContext(fake, [path], { refresh: 0.001 });
 
 		vi.setSystemTime(at("09:59:45"));
 		await event.draw(context);
@@ -209,6 +224,8 @@ describe("an alert that stops being one", () => {
 
 		// The meeting is called off while its alert is on screen.
 		await calendars.write("cancelled.ics");
+		await sleep(REFRESHED_MS);
+
 		await event.draw(context);
 
 		expect(fake.clears).toContainEqual({ application_name: event.name });

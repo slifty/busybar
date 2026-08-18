@@ -89,6 +89,8 @@ interface Calendars {
 	// A path in the same directory that was never written, for a feed that
 	// cannot be read.
 	readonly missing: (name: string) => string;
+	// Takes one away, for a feed that stops being readable partway through.
+	readonly remove: (name: string) => Promise<void>;
 	readonly forget: () => Promise<void>;
 }
 
@@ -121,6 +123,9 @@ const createCalendars = (): Calendars => {
 			return path;
 		},
 		missing: (name) => join(directory, name),
+		remove: async (name) => {
+			await rm(join(directory, name), { force: true });
+		},
 		forget: async () => {
 			await rm(directory, { recursive: true, force: true });
 		},

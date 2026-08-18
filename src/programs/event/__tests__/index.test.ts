@@ -15,6 +15,7 @@ import {
 	caption,
 	contextFor,
 	createCalendars,
+	startedContext,
 	drawnName,
 	isCountdown,
 	isRectangle,
@@ -23,7 +24,7 @@ import {
 	unixSeconds,
 } from "../../../test/event.ts";
 import { ALERT_COLOR } from "../appointment.ts";
-import { ALERT_PRIORITY, IDLE_REFRESH_MS, event } from "../index.ts";
+import { ALERT_PRIORITY, event } from "../index.ts";
 
 // The row the padding sits on: the frame is two pixels, so rows 14 and 15 are
 // it and row 13 is the clear one nothing may reach.
@@ -77,7 +78,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		const elements = fake.draws[0]?.elements ?? [];
 
@@ -99,7 +100,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(caption(fake.draws[0]?.elements ?? [])?.text).toBe("in");
 	});
@@ -115,7 +116,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(
 			(fake.draws[0]?.elements ?? []).find(isRectangle)?.border_width,
@@ -134,7 +135,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		const elements = fake.draws[0]?.elements ?? [];
 
@@ -158,7 +159,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toMatch(/\.\.\.$/v);
 	});
@@ -176,7 +177,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		const elements = fake.draws[0]?.elements ?? [];
 		const label = caption(elements);
@@ -203,7 +204,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		const countdown = (fake.draws[0]?.elements ?? []).find(isCountdown);
 		const digitsBottom =
@@ -230,7 +231,7 @@ describe("drawing an alert", () => {
 
 			vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-			await event.draw(contextFor(fake, [path]));
+			await event.draw(await startedContext(fake, [path]));
 
 			return nameLines(fake.draws[0]?.elements ?? [])[0]?.y;
 		};
@@ -249,7 +250,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect((fake.draws[0]?.elements ?? []).find(isCountdown)?.direction).toBe(
 			"time_left",
@@ -268,7 +269,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		const elements = fake.draws[0]?.elements ?? [];
 
@@ -285,7 +286,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(fake.draws[0]?.priority).toBe(ALERT_PRIORITY);
 		expect(fake.draws[0]?.application_name).toBe(event.name);
@@ -307,7 +308,7 @@ describe("drawing an alert", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Instant");
 	});
@@ -327,7 +328,7 @@ describe("the lead an appointment gets", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Located");
 	});
@@ -344,7 +345,7 @@ describe("the lead an appointment gets", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(fake.draws).toStrictEqual([]);
 	});
@@ -362,7 +363,9 @@ describe("the lead an appointment gets", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
 
-		await event.draw(contextFor(fake, [path], { leads: { located: 1 } }));
+		await event.draw(
+			await startedContext(fake, [path], { leads: { located: 1 } }),
+		);
 
 		expect(fake.draws).toStrictEqual([]);
 	});
@@ -382,16 +385,19 @@ describe("when the alert has not opened", () => {
 		// refresh and is what decides the wait.
 		vi.setSystemTime(new Date("2026-01-02T09:50:00Z"));
 
-		const { nextDrawInMs } = await event.draw(contextFor(fake, [path]));
+		const { nextDrawInMs } = await event.draw(
+			await startedContext(fake, [path]),
+		);
 
 		expect(fake.draws).toStrictEqual([]);
 		expect(nextDrawInMs).toBe(5 * MS_PER_MINUTE);
 	});
 
-	// A floor on curiosity rather than a poll: it applies only between alerts,
-	// where waking costs a read and no device traffic. Without it a meeting
-	// added ahead of the one we can see would be missed.
-	it("looks again on the idle refresh when the next window is further off", async () => {
+	// The wait is however long it is. It used to be capped, so that a draw would
+	// come round to re-read the calendars even with nothing to show -- which is
+	// the coupling that is gone: reading is the refresher's job now, on its own
+	// clock, whether or not anything is drawing.
+	it("waits until the window opens, however far off that is", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
 			"distant.ics",
@@ -400,15 +406,18 @@ describe("when the alert has not opened", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:00:00Z"));
 
-		const { nextDrawInMs } = await event.draw(contextFor(fake, [path]));
+		const { nextDrawInMs } = await event.draw(
+			await startedContext(fake, [path]),
+		);
 
-		// The window opens at 09:55, further off than the refresh will wait.
-		expect(nextDrawInMs).toBe(IDLE_REFRESH_MS);
+		// The window opens at 09:55, which is fifty-five minutes off.
+		expect(nextDrawInMs).toBe(55 * MS_PER_MINUTE);
 	});
 
-	// A calendar somebody else is writing gains entries on its own, so a day
-	// whose appointments are all done still has to be looked at again.
-	it("keeps looking with nothing left in the calendar at all", async () => {
+	// A day with nothing left in it asks for no draws at all. Something being
+	// added to the calendar is not something a draw could have discovered
+	// anyway -- the refresher notices, and wakes the program when it does.
+	it("asks not to be drawn again when nothing is coming", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
 			"done.ics",
@@ -417,10 +426,12 @@ describe("when the alert has not opened", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:00:00Z"));
 
-		const { nextDrawInMs } = await event.draw(contextFor(fake, [path]));
+		const { nextDrawInMs } = await event.draw(
+			await startedContext(fake, [path]),
+		);
 
 		expect(fake.draws).toStrictEqual([]);
-		expect(nextDrawInMs).toBe(IDLE_REFRESH_MS);
+		expect(nextDrawInMs).toBeUndefined();
 	});
 });
 
@@ -438,7 +449,7 @@ describe("several calendars", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
-		await event.draw(contextFor(fake, [work, personal]));
+		await event.draw(await startedContext(fake, [work, personal]));
 
 		// The ten o'clock is the one alerting; the eleven o'clock is not yet.
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Personal");
@@ -456,7 +467,7 @@ describe("several calendars", () => {
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
 		await expect(
-			event.draw(contextFor(fake, [good, calendars.missing("missing.ics")])),
+			event.start?.(contextFor(fake, [good, calendars.missing("missing.ics")])),
 		).rejects.toThrow(/could not read/v);
 	});
 });
@@ -480,7 +491,7 @@ describe("when two alerts overlap", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:41:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Call");
 	});
@@ -493,7 +504,9 @@ describe("when two alerts overlap", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:35:00Z"));
 
-		const { nextDrawInMs } = await event.draw(contextFor(fake, [path]));
+		const { nextDrawInMs } = await event.draw(
+			await startedContext(fake, [path]),
+		);
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Across Town");
 		expect(nextDrawInMs).toBe(5 * MS_PER_MINUTE);
@@ -508,7 +521,7 @@ describe("when two alerts overlap", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:46:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Call");
 	});
@@ -519,7 +532,7 @@ describe("when two alerts overlap", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:48:00Z"));
 
-		await event.draw(contextFor(fake, [path]));
+		await event.draw(await startedContext(fake, [path]));
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Across Town");
 	});

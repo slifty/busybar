@@ -349,19 +349,33 @@ is not written for this tool and one odd entry should not take the rest down:
 
 ## Keeping up
 
-The calendars are read on every draw, not held from startup, so a meeting added
-this morning reaches a process that started yesterday and a cancelled one stops
-alerting without a restart.
+The calendars are read on a clock of their own, every five minutes by default,
+and **nothing about drawing is involved**. `draw` uses whatever was last read
+and fetches nothing.
 
-Between alerts the program will not go more than fifteen minutes without looking
-again, even when the next alert it can see is hours off — otherwise a meeting
-added ahead of that one would be missed, and a day whose appointments are all
-done would never be looked at again. Nothing is on screen at those moments, so
-the wake-up costs a read and no device traffic.
+Those are two different questions and used to be one. Drawing is about the next
+few seconds and happens when something on screen has to change; reading is about
+the next few hours and should happen whether or not anything is on screen at
+all. Tying them together meant a program with nothing to show had to be woken on
+a timer purely to look at a feed, and a program chiming every ten seconds
+re-fetched every calendar every ten seconds to redraw pixels it had already
+drawn.
 
-While an alert is up, the next draw is whichever comes first of the appointment
-starting and a sooner appointment's window opening. The device ticks the
-countdown on its own in between, so a typical alert is one draw.
+So the program now asks for no draws at all on a day with nothing left in it,
+and the refresher wakes it if that stops being true. **`refresh` is the longest a
+meeting entered on your phone can take to reach the bar** — and since an alert
+with no physical location only opens five minutes before the start, an
+appointment created less than `refresh` plus its lead before it begins can be
+missed entirely. Somewhere-to-be entries have half an hour of lead and absorb it
+comfortably.
+
+A read that fails is not swallowed. The reason is kept and the next draw throws
+it, so the red `ERROR` goes on the bar — which matters more here than elsewhere,
+because a bar quietly showing nothing is exactly what this program looks like
+when it is working.
+
+While an alert is up, the draws are about the alert alone: when it is due to
+chime, when a sooner appointment's window opens, and when it ends.
 
 ## Settings
 
@@ -373,6 +387,7 @@ countdown on its own in between, so a typical alert is one draw.
 | `leads.plain`   | `5`     | Minutes of warning for one that says neither                                               |
 | `sound.lead`    | `30`    | Seconds before the start that an alert with no physical location starts chiming            |
 | `sound.linger`  | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
+| `refresh`       | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |
 
 An alert is always on screen by the time it chimes, whatever the two blocks say.
 Nothing stops `leads.url` being shorter than `sound.lead`, and a bar chiming
