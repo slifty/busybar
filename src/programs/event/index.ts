@@ -1,6 +1,7 @@
 import {
 	BUSY_SESSION_PRIORITY,
 	FRONT_DISPLAY_HEIGHT,
+	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_WIDTH,
 } from "../../constants/device.ts";
 import { MS_PER_HOUR, MS_PER_SECOND } from "../../constants/time.ts";
@@ -99,6 +100,9 @@ const PADDING = 1;
 // The rightmost column of a region is one short of its width.
 const LAST_PIXEL = 1;
 
+// What the countdown would have left to run once the appointment has begun.
+const NO_TIME_LEFT = 0;
+
 // Halving what is left over puts the same amount on each side.
 const SIDES = 2;
 
@@ -191,6 +195,37 @@ const captionLeft = (remainingMs: number): number =>
 const LABEL_Y = CONTENT_BOTTOM - FONT_METRICS[STARTS_IN_FONT].baseline;
 const COUNTDOWN_Y = CAPTION_INK_TOP - COUNTDOWN_METRICS.inkTop;
 
+// What the caption says once the appointment has begun.
+//
+// "in 00:00" is a sentence that has stopped being true. The digits clamp at
+// zero rather than counting negative, which is right as far as it goes, but a
+// clock reading 00:00 is a thing you have to interpret -- it looks like a timer
+// that has finished, which is exactly the wrong impression for the one moment
+// the bar is trying to say you are late. A word says it without arithmetic.
+//
+// Only an alert that outlasts its start ever shows this. One with somewhere to
+// be ends at the start, so it is gone rather than saying anything.
+//
+// `small` because the caption band is the five rows the digits occupied and
+// `small` is five rows of capitals -- it takes exactly the space the clock gave
+// back, so nothing above it has to move.
+const NOW_LABEL = "NOW";
+const NOW_FONT = "small";
+const NOW_Y = CONTENT_BOTTOM - FONT_METRICS[NOW_FONT].baseline;
+
+// Where the countdown goes when there is nothing left to count.
+//
+// A text element is blanked with a single space, and the same trick is needed
+// here for the same reason: an element id outlives the drawing that stopped
+// using it, so a countdown left out of a draw stays on screen. A countdown has
+// no blank -- the device draws the digits and takes no text -- so the
+// equivalent is to put it where the display is not. Anchored at its right edge,
+// a whole display's width to the left of the origin, it draws nothing.
+//
+// The alternative was clearing the application and drawing again, which would
+// blink the whole alert off and on at the moment it most wants to be read.
+const OFF_SCREEN_X = -FRONT_DISPLAY_WIDTH;
+
 const NAME_COLOR = "#FFFFFFFF";
 
 // The frame carries the colour, so it is drawn as an outline and nothing else.
@@ -233,6 +268,9 @@ const drawAlert = async (
 ): Promise<DrawResult> => {
 	const { appointment, endsAt, soundsFrom } = alert;
 	const remainingMs = appointment.start.getTime() - now.getTime();
+
+	// Past the start and still up, which only a chiming alert ever is.
+	const begun = remainingMs <= NO_TIME_LEFT;
 
 	// Handing the device the end as an expiry means it takes the alert down
 	// itself, on time, even if this process is not around to do it -- and the
@@ -289,18 +327,31 @@ const drawAlert = async (
 				y: NAME_TOP + line.y,
 				display_until: displayUntil,
 			})),
-			{
-				id: STARTS_IN_ELEMENT_ID,
-				type: "text",
-				text: STARTS_IN_LABEL,
-				font: STARTS_IN_FONT,
-				color: ALERT_COLOR,
-				display: "front",
-				align: "top_left",
-				x: captionX,
-				y: LABEL_Y,
-				display_until: displayUntil,
-			},
+			begun
+				? {
+						id: STARTS_IN_ELEMENT_ID,
+						type: "text",
+						text: NOW_LABEL,
+						font: NOW_FONT,
+						color: ALERT_COLOR,
+						display: "front",
+						align: "top_mid",
+						x: FRONT_DISPLAY_MIDDLE_X,
+						y: NOW_Y,
+						display_until: displayUntil,
+					}
+				: {
+						id: STARTS_IN_ELEMENT_ID,
+						type: "text",
+						text: STARTS_IN_LABEL,
+						font: STARTS_IN_FONT,
+						color: ALERT_COLOR,
+						display: "front",
+						align: "top_left",
+						x: captionX,
+						y: LABEL_Y,
+						display_until: displayUntil,
+					},
 			{
 				id: COUNTDOWN_ELEMENT_ID,
 				type: "countdown",
@@ -317,7 +368,7 @@ const drawAlert = async (
 				// The element's box runs two pixels past its last digit, so
 				// the anchor goes that far beyond where the ink should end.
 				align: "top_right",
-				x: captionRight + COUNTDOWN_METRICS.inkRight,
+				x: begun ? OFF_SCREEN_X : captionRight + COUNTDOWN_METRICS.inkRight,
 				y: COUNTDOWN_Y,
 				display_until: displayUntil,
 			},
@@ -344,14 +395,18 @@ const drawAlert = async (
 	// eslint-disable-next-line require-atomic-updates -- a program's draws never overlap, so there is no interleaved update to lose
 	alarming = sounding;
 
-	// Three things can change what is on screen, and the next draw is whichever
-	// comes first: this alert ending, it starting to make a noise, and a sooner
-	// appointment's alert opening over the top of it. While it is making a
-	// noise there is a fourth, which is the next chime. The device holds the
+	// Four things can change what is on screen, and the next draw is whichever
+	// comes first: this alert ending, it starting to make a noise, the
+	// appointment beginning -- which is when the clock is replaced by the word
+	// -- and a sooner appointment's alert opening over the top of it. While it
+	// is making a noise there is a fifth, which is the next chime. The device holds the
 	// countdown honest in between all of them.
 	const opens = nextOpensAt(alerts, now);
-	const instants = [endsAt, opens, soundsFrom].flatMap((instant) =>
-		instant !== undefined && instant.getTime() > now.getTime() ? [instant] : [],
+	const instants = [endsAt, opens, soundsFrom, appointment.start].flatMap(
+		(instant) =>
+			instant !== undefined && instant.getTime() > now.getTime()
+				? [instant]
+				: [],
 	);
 
 	const untilMs = Math.min(

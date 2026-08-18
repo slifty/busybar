@@ -196,9 +196,21 @@ A silent alert's whole job is getting you there on time, which is over once it
 is time — so the countdown reaching zero and the alert disappearing are the same
 instant. One that chimes has to outlast the start, because it is supposed to
 continue until somebody says they have seen it, and the screen going quiet while
-the bar is still shouting would be the bar contradicting itself. Past the start
-the countdown reads `00:00`: the device clamps it rather than counting negative,
-which is exactly right — you are late, and by how much is not the useful number.
+the bar is still shouting would be the bar contradicting itself.
+
+Past the start the clock is replaced by the word **`NOW`**. The device clamps the
+digits at `00:00` rather than counting negative, which is right as far as it
+goes — but a clock reading zero looks like a timer that has _finished_, which is
+the wrong impression for the one moment the bar is trying to say you are late. A
+word says it without arithmetic, and only an alert that outlasts its start ever
+shows it: one with somewhere to be has already gone.
+
+`NOW` is set in `small`, which is exactly the five rows the digits gave back, so
+nothing above it moves. The countdown is parked off the left of the display
+rather than left out of the draw — an element id outlives the drawing that
+stopped using it, and a countdown has no blank to send the way a text element
+has a single space. Clearing the application instead would blink the whole alert
+off and on at the moment it most wants to be read.
 
 One case does not wait for the expiry: an alert whose appointment has stopped
 being one. If the meeting is cancelled, moved, or the calendar simply stops
