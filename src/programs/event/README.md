@@ -155,27 +155,59 @@ interrupted by a meeting alert.** That is the intended direction. A focus
 session does not make the meeting go away, and a bar being tactful about it is a
 bar letting you miss it.
 
+## The sound
+
+Thirty seconds before the start, an appointment **with no physical location**
+starts chiming: the firmware's own `calendar_event_starts.snd`, replayed every
+ten seconds until it is acknowledged.
+
+Only those. Something across town is missed half an hour before it starts, and
+no chime thirty seconds out was ever going to save it — whereas a call you are
+meant to be on is missed by exactly the thirty seconds you spent not noticing,
+which is the failure this is for. So the sound is for `url` and `plain` entries
+and never for `located` ones, which is the same split as "did the calendar name
+a place".
+
+Four and a half of the five minutes are silent. Looking at a yellow frame is
+enough until it is not, and a bar that chimed for the whole lead would be a bar
+you turn down.
+
+The chime is replayed rather than played once because it is under two seconds
+long and the alert is meant to keep asking. Ten seconds apart leaves a clear gap
+between chimes, which is what makes it read as an alarm wanting an answer rather
+than as a siren — and each repeat costs a draw, which costs a read of every
+calendar, so it is deliberately not faster.
+
 ## How an alert ends
 
-It expires. Every element is drawn with the appointment's start as its
-`display_until`, so the device takes the alert down itself, at exactly the
-moment the appointment begins, and the built-in clock comes back on its own. The
-countdown reaching zero and the alert disappearing are the same instant, and a
-process that dies mid-alert cannot leave one stranded on the display.
+Two ways, and the ordinary one is that it expires. Every element is drawn with
+the alert's end as its `display_until`, so the device takes it down itself, on
+time, and the built-in clock comes back on its own. A process that dies
+mid-alert cannot leave one stranded on the display.
 
-Nothing acknowledges an alert, because nothing can yet. The button presses on
-the bar are readable — they arrive as `BSB_Input.InputEvent` on the device's
-status WebSocket — but acting on them needs the `Program` contract to grow a way
-to react to something other than the clock, which is
-[deliberately not in this version](../../program.ts). Sound is missing for the
-same reason it would be pointless without acknowledgement: an alert you cannot
-silence is one you learn to resent.
+When the alert ends depends on whether it makes a noise:
 
-The consequence to know about is that **the 30-second alert from the original
-design is not here.** Everything with no physical location was to get a sound
-30 seconds out, continuing until acknowledged; without either half of that,
-there is nothing meaningful to do at the 30-second mark that the five-minute
-alert is not already doing.
+| Alert                | Ends                        |
+| -------------------- | --------------------------- |
+| Somewhere to be      | At the appointment's start  |
+| Anything that chimes | Two minutes after the start |
+
+A silent alert's whole job is getting you there on time, which is over once it
+is time — so the countdown reaching zero and the alert disappearing are the same
+instant. One that chimes has to outlast the start, because the screen going
+quiet while the bar is still shouting would be the bar contradicting itself.
+Past the start the countdown reads `00:00`: the device clamps it rather than
+counting negative, which is exactly right — you are late, and by how much is not
+the useful number.
+
+**The time box is the second way, and for now it is the only thing that stops a
+chime.** The alert was specified to continue until somebody says they have seen
+it, and nothing on the bar can say that yet — so a limit is doing the whole job
+of ending it, and would still be needed once a button can, because an unattended
+bar acknowledges nothing. Two minutes is long enough to reach the bar from the
+next room and short enough that a bar left alone falls quiet before anybody
+minds. `sound.linger` moves it, and `0` makes a chiming alert end at the start
+like a silent one.
 
 ## When two alerts overlap
 
@@ -263,6 +295,13 @@ countdown on its own in between, so a typical alert is one draw.
 | `leads.located` | `30`    | Minutes of warning for an appointment with somewhere physical to be                        |
 | `leads.url`     | `5`     | Minutes of warning for one with a link                                                     |
 | `leads.plain`   | `5`     | Minutes of warning for one that says neither                                               |
+| `sound.lead`    | `30`    | Seconds before the start that an alert with no physical location starts chiming            |
+| `sound.linger`  | `120`   | Seconds past the start it keeps chiming. `0` ends it at the start                          |
+
+An alert is always on screen by the time it chimes, whatever the two blocks say.
+Nothing stops `leads.url` being shorter than `sound.lead`, and a bar chiming
+about an appointment it is not naming is alarming and useless in the same
+breath.
 
 ---
 

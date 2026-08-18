@@ -24,6 +24,16 @@ const statusOf = (error: unknown): number | undefined => {
 const isPreempted = (error: unknown): boolean =>
 	statusOf(error) === HTTP_STATUS.CLIENT_ERROR.CONFLICT;
 
+// The device answers 410 for a request asking it to stop doing something it is
+// not doing -- stopping a sound that has already finished on its own.
+//
+// Kept beside `isPreempted` rather than with the one program that needs it,
+// because both are the same thing: reading an HTTP status off an `unknown`,
+// which is all `busy-lib` gives back, and deciding that a particular refusal is
+// ordinary rather than a failure.
+const isNotHappening = (error: unknown): boolean =>
+	statusOf(error) === HTTP_STATUS.CLIENT_ERROR.GONE;
+
 // Removes one application's elements, leaving anything drawn by other
 // applications in place.
 const clearApplication = async (
@@ -112,4 +122,4 @@ const showError = async (
 	});
 };
 
-export { clearApplication, isPreempted, showError };
+export { clearApplication, isNotHappening, isPreempted, showError };

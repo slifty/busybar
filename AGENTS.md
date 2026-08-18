@@ -184,12 +184,13 @@ src/
     ├── index.ts        # Registry: name -> program, and what a list of names resolves to
     ├── event/
     │   ├── README.md        # What it draws and why, its leads, its settings
-    │   ├── alerts.ts        # Which alert owns the screen, and when to think again
-    │   ├── appointment.ts   # An appointment, its kind, and how much warning each kind gets
+    │   ├── alerts.ts        # When an alert opens, ends, and chimes; which one owns the screen
+    │   ├── appointment.ts   # An appointment, its kind, and whether that kind makes a noise
     │   ├── appointments.ts  # Reads every configured calendar and pools them
     │   ├── calendar.ts      # Turns occurrences into appointments
-    │   ├── index.ts         # Draws the alert and schedules the next draw
-    │   └── settings.ts      # What this program can be told to do
+    │   ├── index.ts         # Draws the alert, plays the sound, schedules the next draw
+    │   ├── settings.ts      # What this program can be told to do
+    │   └── sound.ts         # The chime, and how it stops
     ├── focus/
     │   ├── README.md   # What it draws and why, its schedule sources, its settings
     │   ├── blocks.ts   # Picks the source, reads it, mirrors a calendar to the file
@@ -233,7 +234,8 @@ file.
 part of the build, and are run by hand with `node tools/<name>.ts`. They are
 what regenerates the tables in `src/fonts.ts` and what shows a layout without
 waiting for the schedule to reach an interesting moment — `preview.ts` for
-`focus` and `preview-event.ts` for `event`. Both clear the display before each
+`focus` and `preview-event.ts` for `event` -- which now also makes a noise, since
+it runs the program rather than imitating it. Both clear the display before each
 case, so a case that draws nothing comes back blank rather than showing the
 previous one's frame; a stale capture that reads as a fresh one defeats the
 whole point of printing the pixels. ESLint only covers
@@ -426,6 +428,20 @@ against firmware reporting `api_semver` 25.0.0.
 - **Errors are plain `Error`s.** `busy-lib` attaches `status`, `statusText`,
   and `body` via `Object.assign` and exports no error class, so HTTP status has
   to be read off an `unknown` by duck typing.
+- **The firmware ships sounds as well as sprites.**
+  `/ext/apps_assets/shared/sounds` holds `calendar_event_starts.snd`,
+  `calendar_reminder_ends.snd` and `volume_change.snd`. Play one with `POST
+/api/audio/play` and `stock_path: "shared/<file>.snd"`, which skips asset
+  upload the same way `shared/<file>.image` does. They are headerless 16-bit
+  little-endian PCM at 44100 bytes per second, so the calendar chimes are about a
+  second and a half.
+- **`POST /api/audio/play` takes no loop, repeat or duration**, so a sound that
+  is meant to keep going has to be asked for again and again by whatever wants
+  it. Nothing on the device will hold a noise going on your behalf.
+- **`DELETE /api/audio/play` stops whatever is playing, not your own sound.** It
+  takes no application name, and answers 410 when nothing is playing -- which is
+  the ordinary outcome of stopping a chime that has already finished, so it has
+  to be tolerated rather than treated as a failure.
 - **A signal handler does not keep Node alive.** Registering `SIGINT` is not
   scheduled work, so a program that draws once and waits needs a timer (or
   similar ref'd handle) to hold the event loop open.
@@ -599,6 +615,11 @@ are worth copying rather than reinventing:
 - **Fake the clock, not the event loop.** Anything reading `new Date()` gets
   `vi.useFakeTimers({ toFake: ["Date"] })` and `vi.setSystemTime(...)`. Faking
   timers wholesale would stall the real file reads these suites await.
+- **`src/test/event.ts` holds what the `event` suites share** — calendars written
+  into a `mkdtemp` directory, a context to draw with, and the queries for what
+  landed on the display. Two suites want all of it, which is what makes it
+  tooling: `index.test.ts` for what is drawn and `alerting.test.ts` for the
+  noise.
 - **Prefer a real temporary file to a mocked `fs`.** `blocks.test.ts` writes
   schedules into a `mkdtemp` directory and points a settings block built by
   `sectionOf` at them; the config suites do the same with real YAML files.

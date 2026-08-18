@@ -4,13 +4,44 @@
 // program be told to do?" is this file rather than a search for whatever reads
 // a value somewhere in the folder.
 
-import { MS_PER_MINUTE } from "../../constants/time.ts";
+import { MS_PER_MINUTE, MS_PER_SECOND } from "../../constants/time.ts";
 import { LEAD_MINUTES } from "./appointment.ts";
 import type { ConfigSection } from "../../config/section.ts";
 import type { Kind } from "./appointment.ts";
 
 const CALENDARS_KEY = "calendars";
 const LEADS_KEY = "leads";
+const SOUND_KEY = "sound";
+const SOUND_LEAD_KEY = "lead";
+const SOUND_LINGER_KEY = "linger";
+
+// How long before the start an alert with no physical location begins to make
+// a noise, in seconds.
+//
+// Thirty is what the program was asked for, and it is the number the sound is
+// for: five minutes of yellow is a thing you can look at and go back to what
+// you were doing, and thirty seconds is the point at which looking is no
+// longer enough.
+const DEFAULT_SOUND_LEAD_SECONDS = 30;
+
+// How long an unacknowledged sound keeps going past the start, in seconds.
+//
+// It has to end somehow. The alert is meant to continue until it is
+// acknowledged, and an unattended bar acknowledges nothing -- so without a
+// limit, one appointment nobody was there for leaves the bar chiming until
+// somebody comes back to the desk, which is a worse thing to walk in on than a
+// missed meeting.
+//
+// Two minutes is long enough to reach the bar from the next room and short
+// enough that a bar left alone falls quiet before anybody minds.
+const DEFAULT_SOUND_LINGER_SECONDS = 120;
+
+// The sound an appointment with no physical location makes, in milliseconds.
+interface SoundSettings {
+	readonly leadMs: number;
+	readonly lingerMs: number;
+}
+
 interface EventSettings {
 	// The appointment calendars to watch, as `https` URLs or paths to `.ics`
 	// files. Any number of them: they are read independently and the
@@ -27,6 +58,7 @@ interface EventSettings {
 	// file rather than in a comment. Whoever is being warned is the one who
 	// knows how far away their meetings are.
 	readonly leads: Readonly<Record<Kind, number>>;
+	readonly sound: SoundSettings;
 	// Where a setting is written, so that a message about a feed that could
 	// not be read can say which line to go and fix.
 	readonly where: (key: string) => string;
@@ -53,11 +85,34 @@ const leadsIn = (section: ConfigSection): Record<Kind, number> => {
 	return leads;
 };
 
+const soundIn = (section: ConfigSection): SoundSettings => {
+	const sound = {
+		leadMs:
+			section.number(SOUND_LEAD_KEY, DEFAULT_SOUND_LEAD_SECONDS) *
+			MS_PER_SECOND,
+		lingerMs:
+			section.number(SOUND_LINGER_KEY, DEFAULT_SOUND_LINGER_SECONDS) *
+			MS_PER_SECOND,
+	};
+
+	section.done();
+
+	return sound;
+};
+
 const eventSettings = (config: ConfigSection): EventSettings => ({
 	calendars: config.strings(CALENDARS_KEY),
 	leads: leadsIn(config.section(LEADS_KEY)),
+	sound: soundIn(config.section(SOUND_KEY)),
 	where: config.where,
 });
 
-export { CALENDARS_KEY, LEADS_KEY, eventSettings };
-export type { EventSettings };
+export {
+	CALENDARS_KEY,
+	DEFAULT_SOUND_LEAD_SECONDS,
+	DEFAULT_SOUND_LINGER_SECONDS,
+	LEADS_KEY,
+	SOUND_KEY,
+	eventSettings,
+};
+export type { EventSettings, SoundSettings };

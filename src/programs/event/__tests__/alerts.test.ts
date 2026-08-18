@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MS_PER_MINUTE } from "../../../constants/time.ts";
+import { MS_PER_MINUTE, MS_PER_SECOND } from "../../../constants/time.ts";
 import { sectionOf } from "../../../test/config.ts";
 import {
 	alertFor,
 	alertsFor,
 	isShowing,
+	isSounding,
 	nextOpensAt,
 	showingAt,
 } from "../alerts.ts";
@@ -21,8 +22,9 @@ const appointment = (name: string, start: string, kind: Kind): Appointment => ({
 	kind,
 });
 
-// What the program does when nobody has written a `leads` block, which is the
-// arrangement every one of these is about unless it says otherwise.
+// What the program does when nobody has written a `leads` or `sound` block,
+// which is the arrangement every one of these is about unless it says
+// otherwise.
 const DEFAULTS: EventSettings = eventSettings(sectionOf());
 
 const settingsOf = (values: Record<string, unknown>): EventSettings =>
@@ -61,19 +63,56 @@ describe("alertFor", () => {
 		);
 	});
 
-	it("leaves the kinds the file said nothing about at their defaults", () => {
-		const settings = settingsOf({ leads: { located: 1 } });
+	describe("when the appointment has somewhere to be", () => {
+		const alert = alertFor(ACROSS_TOWN, DEFAULTS);
 
-		expect(alertFor(CALL, settings).opensAt.toISOString()).toBe(
-			at("09:55").toISOString(),
-		);
+		// No chime thirty seconds out was going to get anybody across town, and
+		// the alert's job is over once it is time.
+		it("never makes a noise", () => {
+			expect(alert.soundsFrom).toBeUndefined();
+		});
+
+		it("ends the instant the appointment starts", () => {
+			expect(alert.endsAt.toISOString()).toBe(at("10:00").toISOString());
+		});
 	});
 
-	// The alert's whole job is getting you there on time, which is over once it
-	// is time.
-	it("ends when the appointment starts", () => {
-		expect(alertFor(CALL, DEFAULTS).endsAt.toISOString()).toBe(
-			at("10:00").toISOString(),
+	describe("when the appointment has nowhere to be", () => {
+		const alert = alertFor(CALL, DEFAULTS);
+
+		it("starts making a noise half a minute out", () => {
+			expect(alert.soundsFrom?.toISOString()).toBe(
+				new Date("2026-01-02T09:59:30Z").toISOString(),
+			);
+		});
+
+		// It is meant to continue until it is acknowledged, and an unattended
+		// bar acknowledges nothing -- so something has to end it.
+		it("keeps going past the start rather than stopping there", () => {
+			expect(alert.endsAt.getTime()).toBeGreaterThan(CALL.start.getTime());
+		});
+
+		it("stops when the file says to stop", () => {
+			const settings = settingsOf({ sound: { linger: 30 } });
+
+			expect(alertFor(CALL, settings).endsAt.toISOString()).toBe(
+				new Date("2026-01-02T10:00:30Z").toISOString(),
+			);
+		});
+	});
+
+	// A file is free to set a warning shorter than the sound's own lead, and a
+	// bar chiming about an appointment it is not naming is alarming and
+	// useless in the same breath.
+	it("is on screen by the time it makes a noise, whatever the leads say", () => {
+		const settings = settingsOf({
+			leads: { url: 0 },
+			sound: { lead: 60 },
+		});
+		const alert = alertFor(CALL, settings);
+
+		expect(alert.opensAt.getTime()).toBeLessThanOrEqual(
+			alert.soundsFrom?.getTime() ?? Infinity,
 		);
 	});
 });
@@ -93,14 +132,46 @@ describe("isShowing", () => {
 		expect(isShowing(alert, at("09:58"))).toBe(true);
 	});
 
-	// The drawing carries the alert's end as its expiry, so the device takes it
-	// down at exactly this instant.
-	it("stops the instant the appointment starts", () => {
-		expect(isShowing(alert, at("10:00"))).toBe(false);
+	// The noise outlasts the start, and the screen must not go quiet while the
+	// bar is still shouting.
+	it("is still showing while it is still making a noise", () => {
+		expect(isShowing(alert, at("10:01"))).toBe(true);
 	});
 
-	it("is not showing once the appointment has begun", () => {
-		expect(isShowing(alert, at("10:30"))).toBe(false);
+	it("stops once the noise has timed out", () => {
+		expect(isShowing(alert, at("10:03"))).toBe(false);
+	});
+
+	// An alert with somewhere to be has nothing to say once it is time.
+	it("stops a silent alert the instant the appointment starts", () => {
+		expect(isShowing(alertFor(ACROSS_TOWN, DEFAULTS), at("10:00"))).toBe(false);
+	});
+});
+
+describe("isSounding", () => {
+	const alert = alertFor(CALL, DEFAULTS);
+
+	it("is silent while the alert is only being looked at", () => {
+		expect(isSounding(alert, at("09:57"))).toBe(false);
+	});
+
+	it("starts at the sound's own lead, not the alert's", () => {
+		expect(isSounding(alert, new Date("2026-01-02T09:59:30Z"))).toBe(true);
+	});
+
+	it("carries on past the start", () => {
+		expect(isSounding(alert, at("10:01"))).toBe(true);
+	});
+
+	it("stops when the alert does", () => {
+		expect(isSounding(alert, at("10:03"))).toBe(false);
+	});
+
+	it("never sounds for an appointment with somewhere to be", () => {
+		const located = alertFor(ACROSS_TOWN, DEFAULTS);
+
+		expect(isSounding(located, at("09:59"))).toBe(false);
+		expect(isSounding(located, at("10:00"))).toBe(false);
 	});
 });
 
@@ -142,9 +213,11 @@ describe("showingAt", () => {
 			);
 		});
 
-		// And hands it back once the sooner one has begun and stopped showing.
-		it("returns to the longer alert once the sooner one has started", () => {
-			expect(showingAt(overlapping, at("09:46"))?.appointment.name).toBe(
+		// And hands it back once the sooner one has stopped -- which, for one
+		// that makes a noise, is after the noise has timed out rather than at
+		// its start.
+		it("returns to the longer alert once the sooner one is done", () => {
+			expect(showingAt(overlapping, at("09:48"))?.appointment.name).toBe(
 				LATER_BUT_SHOWING.name,
 			);
 		});
@@ -162,8 +235,8 @@ describe("showingAt", () => {
 		});
 	});
 
-	it("ignores an appointment that has already started", () => {
-		expect(showingAt(alertsFor([CALL], DEFAULTS), at("10:01"))).toBeUndefined();
+	it("ignores an appointment whose alert has timed out", () => {
+		expect(showingAt(alertsFor([CALL], DEFAULTS), at("10:05"))).toBeUndefined();
 	});
 });
 
@@ -192,8 +265,9 @@ describe("nextOpensAt", () => {
 });
 
 describe("LEAD_MINUTES", () => {
-	// A link and an unlabelled entry agree on a number and are still two
-	// different statements, so the file has to be able to move them apart.
+	// The sound is for everything with no physical location, which is two of
+	// these three kinds -- so the file has to be able to move them apart even
+	// though the defaults agree.
 	it("keeps a link and an unlabelled entry as separate kinds", () => {
 		expect(Object.keys(LEAD_MINUTES)).toContain("url");
 		expect(Object.keys(LEAD_MINUTES)).toContain("plain");
@@ -204,8 +278,11 @@ describe("LEAD_MINUTES", () => {
 		expect(LEAD_MINUTES.located).toBeGreaterThan(LEAD_MINUTES.plain);
 	});
 
-	// The defaults are written in minutes and carried in milliseconds.
-	it("reads the leads as minutes", () => {
+	// The defaults are in minutes and the sound's numbers are in seconds, which
+	// is the sort of thing that is obvious in the file and easy to get wrong in
+	// the code.
+	it("reads the leads as minutes and the sound as seconds", () => {
 		expect(DEFAULTS.leads.url).toBe(LEAD_MINUTES.url * MS_PER_MINUTE);
+		expect(DEFAULTS.sound.leadMs).toBe(30 * MS_PER_SECOND);
 	});
 });

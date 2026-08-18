@@ -10,10 +10,11 @@ import {
 } from "../../constants/time.ts";
 import { COUNTDOWN_METRICS, FONT_METRICS, widthOf } from "../../fonts.ts";
 import { fitText, maxLinesIn } from "../../text.ts";
-import { alertsFor, nextOpensAt, showingAt } from "./alerts.ts";
+import { alertsFor, isSounding, nextOpensAt, showingAt } from "./alerts.ts";
 import { ALERT_COLOR } from "./appointment.ts";
 import { loadAppointments } from "./appointments.ts";
 import { CALENDARS_KEY, eventSettings } from "./settings.ts";
+import { REPEAT_MS, playAlert, stopAlert } from "./sound.ts";
 import type { DrawResult, Program, ProgramContext } from "../../program.ts";
 import type { Region } from "../../text.ts";
 import type { Alert } from "./alerts.ts";
@@ -213,20 +214,29 @@ const NO_FILL_COLORS = ["#00000000"];
 const unixSeconds = (date: Date): string =>
 	String(Math.ceil(date.getTime() / MS_PER_SECOND));
 
+// Whether the bar is currently making a noise.
+//
+// The chime is asked for again on every draw for as long as the window lasts,
+// so what this remembers is only whether there is one to stop when the window
+// closes.
+let alarming = false;
+
 const drawAlert = async (
-	{ bar, applicationName, priority }: ProgramContext,
+	{ bar, applicationName, priority, log }: ProgramContext,
 	alert: Alert,
 	alerts: readonly Alert[],
 	now: Date,
 ): Promise<DrawResult> => {
-	const { appointment, endsAt } = alert;
+	const { appointment, endsAt, soundsFrom } = alert;
 	const remainingMs = appointment.start.getTime() - now.getTime();
 
-	// Handing the device the alert's end as an expiry means it takes the alert
-	// down itself, on time, even if this process is not around to do it -- and
-	// the built-in clock comes back on its own. That end is the appointment's
-	// start, so the countdown reaching zero and the alert disappearing are the
-	// same instant.
+	// Handing the device the end as an expiry means it takes the alert down
+	// itself, on time, even if this process is not around to do it -- and the
+	// built-in clock comes back on its own. For a silent alert that is the
+	// appointment's own start, so the countdown reaching zero and the alert
+	// disappearing are the same instant. For one that makes a noise it is
+	// later, because the noise is meant to outlast the start and the screen
+	// should not go quiet while the bar is still shouting.
 	const displayUntil = unixSeconds(endsAt);
 
 	const { font, lines: fitted } = fitText(appointment.name, NAME_REGION);
@@ -290,10 +300,11 @@ const drawAlert = async (
 			{
 				id: COUNTDOWN_ELEMENT_ID,
 				type: "countdown",
-				// The appointment's own start rather than the alert's end. The
-				// digits count down to the thing you are about to be late for,
-				// which the two agree about today and are not the same
-				// question.
+				// The appointment's own start, not the alert's end. The digits
+				// count down to the thing you are about to be late for, and
+				// the device clamps them at 00:00 rather than going negative --
+				// so an alert still sounding a minute after the start reads as
+				// 00:00, which is exactly what it is.
 				timestamp: unixSeconds(appointment.start),
 				direction: "time_left",
 				show_hours: "when_non_zero",
@@ -309,19 +320,37 @@ const drawAlert = async (
 		],
 	});
 
-	// Two things can change what is on screen, and the next draw is whichever
-	// comes first: this alert ending, and a sooner appointment's alert opening
-	// over the top of it. The device holds the countdown honest in between.
+	// Played on every draw for as long as the window lasts, rather than once
+	// when it opens. The clip is short and the alert is supposed to keep
+	// asking until it is answered, so the repeat is the point -- and the draw
+	// loop is what the program has to time anything with.
+	const sounding = isSounding(alert, now);
+
+	if (sounding) {
+		await playAlert(bar, applicationName);
+	} else if (alarming) {
+		await stopAlert(bar, log);
+	}
+
+	// eslint-disable-next-line require-atomic-updates -- a program's draws never overlap, so there is no interleaved update to lose
+	alarming = sounding;
+
+	// Three things can change what is on screen, and the next draw is whichever
+	// comes first: this alert ending, it starting to make a noise, and a sooner
+	// appointment's alert opening over the top of it. While it is making a
+	// noise there is a fourth, which is the next chime. The device holds the
+	// countdown honest in between all of them.
 	const opens = nextOpensAt(alerts, now);
-	const instants = [endsAt, opens].flatMap((instant) =>
+	const instants = [endsAt, opens, soundsFrom].flatMap((instant) =>
 		instant !== undefined && instant.getTime() > now.getTime() ? [instant] : [],
 	);
 
-	return {
-		nextDrawInMs: Math.min(
-			...instants.map((instant) => instant.getTime() - now.getTime()),
-		),
-	};
+	const untilMs = Math.min(
+		...instants.map((instant) => instant.getTime() - now.getTime()),
+		sounding ? REPEAT_MS : Infinity,
+	);
+
+	return { nextDrawInMs: untilMs };
 };
 
 // Reading the calendars here is a check, not a cache. `draw` reads them again
@@ -335,6 +364,11 @@ const drawAlert = async (
 // has yet to fill in produces, which makes it far more often a mistake than a
 // request.
 const start = async (context: ProgramContext): Promise<void> => {
+	// A run starts with the bar quiet. Said here rather than left to the
+	// initialiser so that a second run in the same process -- which is every run
+	// after the first in the test suite -- does not inherit the first one's.
+	alarming = false;
+
 	const settings = eventSettings(context.config);
 
 	if (settings.calendars.length === NO_CALENDARS) {
@@ -363,6 +397,11 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 
 	if (showing !== undefined) {
 		return await drawAlert(context, showing, alerts, now);
+	}
+
+	if (alarming) {
+		alarming = false;
+		await stopAlert(context.bar, context.log);
 	}
 
 	// Between alerts there is nothing to draw and nothing to clear: the last

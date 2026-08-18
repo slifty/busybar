@@ -1,7 +1,3 @@
-import { mkdtempSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
 	afterAll,
 	afterEach,
@@ -12,103 +8,33 @@ import {
 	vi,
 } from "vitest";
 import { BUSY_SESSION_PRIORITY } from "../../../constants/device.ts";
-import { MS_PER_MINUTE, MS_PER_SECOND } from "../../../constants/time.ts";
+import { MS_PER_MINUTE } from "../../../constants/time.ts";
 import { COUNTDOWN_METRICS, FONT_METRICS } from "../../../fonts.ts";
 import { createFakeBar } from "../../../test/bar.ts";
-import { sectionOf } from "../../../test/config.ts";
+import {
+	caption,
+	contextFor,
+	createCalendars,
+	drawnName,
+	isCountdown,
+	isRectangle,
+	nameLines,
+	timedEvent,
+	unixSeconds,
+} from "../../../test/event.ts";
 import { ALERT_COLOR } from "../appointment.ts";
 import { ALERT_PRIORITY, IDLE_REFRESH_MS, event } from "../index.ts";
-import type { BusyBar } from "@busy-app/busy-lib";
-import type { ProgramContext } from "../../../program.ts";
-import type { FakeBar } from "../../../test/bar.ts";
 
-type Elements = Parameters<BusyBar["DisplayDraw"]>[0]["elements"];
-type Element = Elements[number];
+// The row the padding sits on: the frame is two pixels, so rows 14 and 15 are
+// it and row 13 is the clear one nothing may reach.
+const LAST_DRAWABLE_ROW = 12;
 
-const isText = (
-	element: Element,
-): element is Extract<Element, { type: "text" }> => element.type === "text";
+const BORDER_THICKNESS = 2;
 
-const isCountdown = (
-	element: Element,
-): element is Extract<Element, { type: "countdown" }> =>
-	element.type === "countdown";
+const calendars = createCalendars();
 
-const isRectangle = (
-	element: Element,
-): element is Extract<Element, { type: "rectangle" }> =>
-	element.type === "rectangle";
-
-// The name is drawn as one element per line, so what it says is the lines put
-// back together.
-//
-// Selected by id rather than by being text, because the caption under the name
-// is text too -- and a helper that swept it up would have every assertion about
-// the name quietly also asserting the caption.
-const NAME_ID_PREFIX = "event-name";
-const STARTS_IN_ID = "event-starts-in";
-
-const drawnName = (elements: Elements): string =>
-	elements
-		.filter(isText)
-		.filter(({ id }) => id.startsWith(NAME_ID_PREFIX))
-		.map(({ text }) => text)
-		.join(" ")
-		.trim();
-
-const caption = (elements: Elements) =>
-	elements.filter(isText).find(({ id }) => id === STARTS_IN_ID);
-
-const unixSeconds = (date: Date): string =>
-	String(Math.ceil(date.getTime() / MS_PER_SECOND));
-
-// Calendars are written to a real temporary directory rather than to a mocked
-// `fs`, for the same reason the focus suites do it: reading a source is most of
-// the job, so faking it would leave the part worth testing untested.
-//
-// Never `local/`, and every title says TEST -- an invented calendar sitting
-// where a real one lives, or wearing a name a real meeting could have, is one
-// glance away from being believed.
-const directory = mkdtempSync(join(tmpdir(), "busybar-event-test-"));
-
-const calendarAt = async (name: string, ...body: string[]): Promise<string> => {
-	const path = join(directory, name);
-
-	await writeFile(
-		path,
-		[
-			"BEGIN:VCALENDAR",
-			"VERSION:2.0",
-			"PRODID:-//busybar//test//EN",
-			...body,
-			"END:VCALENDAR",
-		].join("\r\n"),
-		"utf8",
-	);
-
-	return path;
-};
-
-const timedEvent = (
-	uid: string,
-	summary: string,
-	start: string,
-	extra: string[] = [],
-): string[] => [
-	"BEGIN:VEVENT",
-	`UID:${uid}@busybar.test`,
-	`DTSTART:${start}`,
-	...extra,
-	`SUMMARY:${summary}`,
-	"END:VEVENT",
-];
-
-const contextFor = (fake: FakeBar, calendars: string[]): ProgramContext => ({
-	bar: fake.bar,
-	config: sectionOf({ calendars }),
-	applicationName: event.name,
-	priority: ALERT_PRIORITY,
-	log: () => undefined,
+afterAll(async () => {
+	await calendars.forget();
 });
 
 // Anything reading `new Date()` gets a fixed clock. Timers are deliberately
@@ -119,10 +45,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
-});
-
-afterAll(async () => {
-	await rm(directory, { recursive: true, force: true });
 });
 
 describe("event", () => {
@@ -146,7 +68,7 @@ describe("drawing an alert", () => {
 	// Three minutes before a call, so it is inside its five minute window.
 	it("draws the name and a countdown to the start", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"call.ics",
 			...timedEvent("call", "TEST Call", "20260102T100000Z", [
 				"URL:https://example.test/call",
@@ -170,7 +92,7 @@ describe("drawing an alert", () => {
 	// means by the same shape and the opposite of what this means.
 	it("captions the countdown so the digits cannot be misread", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"caption.ics",
 			...timedEvent("caption", "TEST Caption", "20260102T100000Z"),
 		);
@@ -186,7 +108,7 @@ describe("drawing an alert", () => {
 	// focus block wears.
 	it("draws a two pixel frame", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"frame.ics",
 			...timedEvent("frame", "TEST Frame", "20260102T100000Z"),
 		);
@@ -197,7 +119,7 @@ describe("drawing an alert", () => {
 
 		expect(
 			(fake.draws[0]?.elements ?? []).find(isRectangle)?.border_width,
-		).toBe(2);
+		).toBe(BORDER_THICKNESS);
 	});
 
 	// The name has the whole width now that nothing shares its row, and one
@@ -205,7 +127,7 @@ describe("drawing an alert", () => {
 	// immovable five rows of digits are paid for.
 	it("gives the name the full width, on one line", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"width.ics",
 			...timedEvent("width", "TEST Standup", "20260102T100000Z"),
 		);
@@ -214,12 +136,10 @@ describe("drawing an alert", () => {
 
 		await event.draw(contextFor(fake, [path]));
 
-		const named = (fake.draws[0]?.elements ?? [])
-			.filter(isText)
-			.filter(({ id }) => id.startsWith(NAME_ID_PREFIX));
+		const elements = fake.draws[0]?.elements ?? [];
 
-		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Standup");
-		expect(named).toHaveLength(1);
+		expect(drawnName(elements)).toBe("TEST Standup");
+		expect(nameLines(elements)).toHaveLength(1);
 	});
 
 	// A name it cannot hold says so rather than stopping mid-word, which is the
@@ -227,7 +147,7 @@ describe("drawing an alert", () => {
 	// is not.
 	it("marks a name it had to cut rather than losing the end quietly", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"cut.ics",
 			...timedEvent(
 				"cut",
@@ -249,7 +169,7 @@ describe("drawing an alert", () => {
 	// share an ink offset, which is exactly what it used to do.
 	it("sits the caption's word and digits on a shared baseline", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"baseline.ics",
 			...timedEvent("baseline", "TEST Baseline", "20260102T100000Z"),
 		);
@@ -272,11 +192,11 @@ describe("drawing an alert", () => {
 		expect(labelBaseline).toBe(digitsBottom);
 	});
 
-	// The padding is the whole point of the row budget above: nothing may be
-	// drawn on the row next to the frame, on any side.
+	// The padding is the whole point of the row budget: nothing may be drawn on
+	// the row next to the frame, on any side.
 	it("keeps a clear row between the frame and everything inside it", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"padding.ics",
 			...timedEvent("padding", "TEST Padding", "20260102T100000Z"),
 		);
@@ -285,17 +205,14 @@ describe("drawing an alert", () => {
 
 		await event.draw(contextFor(fake, [path]));
 
-		const elements = fake.draws[0]?.elements ?? [];
-		const countdown = elements.find(isCountdown);
+		const countdown = (fake.draws[0]?.elements ?? []).find(isCountdown);
 		const digitsBottom =
 			(countdown?.y ?? 0) +
 			COUNTDOWN_METRICS.inkTop +
 			COUNTDOWN_METRICS.inkHeight -
 			1;
 
-		// The frame is two pixels, so rows 14 and 15 are it; row 13 is the
-		// padding and nothing may reach it.
-		expect(digitsBottom).toBeLessThanOrEqual(12);
+		expect(digitsBottom).toBeLessThanOrEqual(LAST_DRAWABLE_ROW);
 	});
 
 	// The gap row under the name is lent to descenders so that a tail does not
@@ -306,7 +223,7 @@ describe("drawing an alert", () => {
 	it("draws a name with a tail at the same height as one without", async () => {
 		const heightOf = async (name: string): Promise<number | undefined> => {
 			const fake = createFakeBar();
-			const path = await calendarAt(
+			const path = await calendars.write(
 				`${name.replace(/[^a-z]/giv, "")}.ics`,
 				...timedEvent("tail", name, "20260102T100000Z"),
 			);
@@ -315,9 +232,7 @@ describe("drawing an alert", () => {
 
 			await event.draw(contextFor(fake, [path]));
 
-			return (fake.draws[0]?.elements ?? [])
-				.filter(isText)
-				.find(({ id }) => id.startsWith(NAME_ID_PREFIX))?.y;
+			return nameLines(fake.draws[0]?.elements ?? [])[0]?.y;
 		};
 
 		expect(await heightOf("TEST tail g")).toBe(await heightOf("TEST no tail"));
@@ -327,7 +242,7 @@ describe("drawing an alert", () => {
 	// whole difference between an appointment and a focus block.
 	it("counts down rather than up", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"direction.ics",
 			...timedEvent("direction", "TEST Direction", "20260102T100000Z"),
 		);
@@ -346,7 +261,7 @@ describe("drawing an alert", () => {
 	// seen before. Red is spoken for: it means a program has failed.
 	it("draws it in the alert colour", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"colour.ics",
 			...timedEvent("colour", "TEST Colour", "20260102T100000Z"),
 		);
@@ -361,33 +276,9 @@ describe("drawing an alert", () => {
 		expect(elements.find(isCountdown)?.color).toBe(ALERT_COLOR);
 	});
 
-	// The whole of how an alert ends without a button to acknowledge it: the
-	// device is handed the start as an expiry and takes the drawing down
-	// itself, on time, even if this process is not around to do it.
-	it("expires every element at the appointment's start", async () => {
-		const fake = createFakeBar();
-		const path = await calendarAt(
-			"expiry.ics",
-			...timedEvent("expiry", "TEST Expiry", "20260102T100000Z"),
-		);
-
-		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
-
-		await event.draw(contextFor(fake, [path]));
-
-		const start = unixSeconds(new Date("2026-01-02T10:00:00Z"));
-		const elements = fake.draws[0]?.elements ?? [];
-
-		expect(elements.length).toBeGreaterThan(0);
-
-		for (const element of elements) {
-			expect(element.display_until).toBe(start);
-		}
-	});
-
 	it("draws at the program's own priority, under its own name", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"priority.ics",
 			...timedEvent("priority", "TEST Priority", "20260102T100000Z"),
 		);
@@ -404,7 +295,7 @@ describe("drawing an alert", () => {
 	// not: being on time for it is exactly the job.
 	it("alerts ahead of an appointment with no duration", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"instant.ics",
 			"BEGIN:VEVENT",
 			"UID:instant@busybar.test",
@@ -427,7 +318,7 @@ describe("the lead an appointment gets", () => {
 	// travel gets thirty.
 	it("is alerting half an hour ahead of somewhere to be", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"located.ics",
 			...timedEvent("located", "TEST Located", "20260102T100000Z", [
 				"LOCATION:TEST Room 4",
@@ -444,7 +335,7 @@ describe("the lead an appointment gets", () => {
 	// The same twenty minutes out, for a call: silent, since a link gets five.
 	it("is silent twenty minutes ahead of a call", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"call-lead.ics",
 			...timedEvent("call-lead", "TEST Call", "20260102T100000Z", [
 				"URL:https://example.test/call",
@@ -462,7 +353,7 @@ describe("the lead an appointment gets", () => {
 	// and the file is where an argument like that gets settled.
 	it("takes the lead from the file when the file says one", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"configured-lead.ics",
 			...timedEvent("configured-lead", "TEST Configured", "20260102T100000Z", [
 				"LOCATION:TEST Room 4",
@@ -471,10 +362,7 @@ describe("the lead an appointment gets", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
 
-		await event.draw({
-			...contextFor(fake, [path]),
-			config: sectionOf({ calendars: [path], leads: { located: 1 } }),
-		});
+		await event.draw(contextFor(fake, [path], { leads: { located: 1 } }));
 
 		expect(fake.draws).toStrictEqual([]);
 	});
@@ -485,7 +373,7 @@ describe("when the alert has not opened", () => {
 	// carried their own expiry, so the device has already taken them down.
 	it("draws nothing and waits exactly until the window opens", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"waiting.ics",
 			...timedEvent("waiting", "TEST Waiting", "20260102T100000Z"),
 		);
@@ -505,7 +393,7 @@ describe("when the alert has not opened", () => {
 	// added ahead of the one we can see would be missed.
 	it("looks again on the idle refresh when the next window is further off", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"distant.ics",
 			...timedEvent("distant", "TEST Distant", "20260102T100000Z"),
 		);
@@ -522,7 +410,7 @@ describe("when the alert has not opened", () => {
 	// whose appointments are all done still has to be looked at again.
 	it("keeps looking with nothing left in the calendar at all", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt(
+		const path = await calendars.write(
 			"done.ics",
 			...timedEvent("done", "TEST Done", "20260101T100000Z"),
 		);
@@ -539,11 +427,11 @@ describe("when the alert has not opened", () => {
 describe("several calendars", () => {
 	it("pools the appointments from all of them", async () => {
 		const fake = createFakeBar();
-		const work = await calendarAt(
+		const work = await calendars.write(
 			"work.ics",
 			...timedEvent("work", "TEST Work", "20260102T110000Z"),
 		);
-		const personal = await calendarAt(
+		const personal = await calendars.write(
 			"personal.ics",
 			...timedEvent("personal", "TEST Personal", "20260102T100000Z"),
 		);
@@ -561,15 +449,14 @@ describe("several calendars", () => {
 	// program looks like when it is working.
 	it("fails the read rather than going quiet about one feed", async () => {
 		const fake = createFakeBar();
-		const good = await calendarAt(
+		const good = await calendars.write(
 			"good.ics",
 			...timedEvent("good", "TEST Good", "20260102T100000Z"),
 		);
-
 		vi.setSystemTime(new Date("2026-01-02T09:57:00Z"));
 
 		await expect(
-			event.draw(contextFor(fake, [good, join(directory, "missing.ics")])),
+			event.draw(contextFor(fake, [good, calendars.missing("missing.ics")])),
 		).rejects.toThrow(/could not read/v);
 	});
 });
@@ -589,7 +476,7 @@ describe("when two alerts overlap", () => {
 
 	it("gives the screen to whichever starts soonest", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt("overlap.ics", ...OVERLAPPING);
+		const path = await calendars.write("overlap.ics", ...OVERLAPPING);
 
 		vi.setSystemTime(new Date("2026-01-02T09:41:00Z"));
 
@@ -602,7 +489,7 @@ describe("when two alerts overlap", () => {
 	// one is up.
 	it("wakes when the sooner alert opens, not when the current one ends", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt("wake.ics", ...OVERLAPPING);
+		const path = await calendars.write("wake.ics", ...OVERLAPPING);
 
 		vi.setSystemTime(new Date("2026-01-02T09:35:00Z"));
 
@@ -612,12 +499,25 @@ describe("when two alerts overlap", () => {
 		expect(nextDrawInMs).toBe(5 * MS_PER_MINUTE);
 	});
 
-	// And takes it back once the sooner one has begun and stopped alerting.
-	it("returns to the longer alert once the sooner one has started", async () => {
+	// And takes it back once the sooner one is done -- which, for an alert that
+	// makes a noise, is after the noise has timed out rather than at the start.
+	// A chiming alert keeps the screen for as long as it is chiming.
+	it("keeps the sooner alert up while it is still sounding", async () => {
 		const fake = createFakeBar();
-		const path = await calendarAt("return.ics", ...OVERLAPPING);
+		const path = await calendars.write("still-sounding.ics", ...OVERLAPPING);
 
 		vi.setSystemTime(new Date("2026-01-02T09:46:00Z"));
+
+		await event.draw(contextFor(fake, [path]));
+
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Call");
+	});
+
+	it("returns to the longer alert once the sooner one is done", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write("return.ics", ...OVERLAPPING);
+
+		vi.setSystemTime(new Date("2026-01-02T09:48:00Z"));
 
 		await event.draw(contextFor(fake, [path]));
 

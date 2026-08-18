@@ -84,6 +84,23 @@ programs:
   #     located: 30
   #     url: 5
   #     plain: 5
+  #
+  #   # The noise an appointment with no physical location makes, in seconds.
+  #   #
+  #   # Only those: something across town is missed half an hour before it
+  #   # starts, and no chime thirty seconds out was going to save it. A call you
+  #   # are meant to be on is missed by exactly the thirty seconds you spent not
+  #   # noticing, which is what this is for.
+  #   #
+  #   # `lead` is how long before the start it begins. `linger` is how long it
+  #   # keeps going once the appointment has started and nobody has pressed a
+  #   # button on the bar to say they have seen it -- the alert is meant to
+  #   # continue until it is acknowledged, and an unattended bar acknowledges
+  #   # nothing, so something has to end it. Set `linger` to 0 to have the alert
+  #   # stop at the start, as a located one does.
+  #   sound:
+  #     lead: 30
+  #     linger: 120
 
   # Shows the focus block you are in and how long is left of it.
   # focus:

@@ -79,9 +79,9 @@ start — rather than one that is always on.
 
 `event` is the one program that makes that claim. It draws at 91, one above an
 active BUSY or CUSTOM session, so an appointment alert interrupts everything
-including a focus session you started — for the five or thirty minutes it is up,
-and not a moment longer, since the alert expires on its own when the
-appointment begins. Running it alongside `focus` is what it is for.
+including a focus session you started — for the few minutes it is up, and not a
+moment longer, since the alert takes itself down when it has run out of time.
+Running it alongside `focus` is what it is for.
 
 Two consequences worth knowing before writing a list:
 

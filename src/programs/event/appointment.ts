@@ -45,6 +45,20 @@ const LEAD_MINUTES = {
 
 type Kind = keyof typeof LEAD_MINUTES;
 
+// Whether the calendar named somewhere to physically be.
+//
+// This is the whole of what decides which alerts make a noise. The issue this
+// program comes from asks for sound on everything *without* a physical
+// location, and the reasoning is that those are the ones you can be late to
+// while sitting still: a meeting across town is missed half an hour before it
+// starts, and no chime thirty seconds out was ever going to save it, whereas a
+// call you are meant to be on is missed by exactly the thirty seconds you spent
+// not noticing.
+const hasPlace = ({ kind }: Appointment): boolean => kind === "located";
+
+// Whether this appointment's alert makes a noise.
+const sounds = (appointment: Appointment): boolean => !hasPlace(appointment);
+
 // Yellow, and deliberately none of the three colours a focus block can be.
 //
 // Red was the other candidate and is spoken for: it is the only red this tool
@@ -54,5 +68,5 @@ type Kind = keyof typeof LEAD_MINUTES;
 // focus block in a phase you had not seen before.
 const ALERT_COLOR = "#FFCC00FF";
 
-export { ALERT_COLOR, LEAD_MINUTES };
+export { ALERT_COLOR, LEAD_MINUTES, hasPlace, sounds };
 export type { Appointment, Kind };
