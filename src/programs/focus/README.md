@@ -8,7 +8,7 @@ shows nothing and the built-in clock has the screen back.
 ```
 ┌────────────────────────────────────┐
 │                                    │
-│      Deep Work            44:59    │
+│      Deep Work          0:44:59    │
 │                                    │
 └────────────────────────────────────┘
 ```
@@ -26,11 +26,19 @@ colour on the text would dim the one thing you are trying to read — orange
 lettering at wind-down worst of all — whereas a frame changing colour is
 visible from further away than the words are, and costs the words nothing.
 
-The clock takes the right quarter of the display, and the name gets the rest.
-That is the countdown's real width rather than a proportion picked by eye: it
-is drawn by the device in a fixed monospaced face, 17px as `MM:SS`, and 27px
-once the hours appear. A block with more than an hour left therefore gives the
-name ten pixels less, and takes them back at the hour mark.
+The clock takes 27px and the name gets the remaining 37px. That is the
+countdown's real width rather than a proportion picked by eye: the device draws
+it in a fixed monospaced face, 17px as `MM:SS` and 27px once the hours appear.
+
+The hours are asked for on every block, even when the answer is zero — so the
+clock reads `0:44:59` rather than `44:59`. Left to itself the device drops the
+hours an hour from the end, which changes the clock's width and hands the name
+ten pixels back mid-block. That meant a block over an hour was drawn one way
+and then drawn another way an hour from its end, at an instant our clock and
+the device's have to agree on to the tick — and only the longer blocks ever
+showed the second layout at all. Sizing everything for the wide clock costs the
+name those ten pixels always and makes the display one thing rather than two:
+nothing moves, and what you look at is what every block was drawn with.
 
 A block shorter than half an hour qualifies for both ends at once. Orange wins
 there, on the grounds that being told to wrap up is worth more than being told
@@ -220,12 +228,12 @@ Two properties of the hardware keep a block to a handful of requests:
   releases the screen on its own — even if this process is not around to do it.
   The countdown reaching zero and the drawing disappearing are the same moment.
 
-What is left is a handful of draws for a typical block: one when it starts, one
-when it turns green, one when it turns orange, and one at the hour mark if it
-is long enough to have started with the hours showing — that being when the
-clock narrows and the name can have the room back. The program asks to be woken
-at exactly those moments rather than polling to find them, because a poll would
-be a request every few seconds to redraw something that had not changed.
+What is left is three draws for a typical block: one when it starts, one when
+it turns green, and one when it turns orange. The program asks to be woken at
+exactly those moments rather than polling to find them, because a poll would be
+a request every few seconds to redraw something that had not changed. Nothing
+about the layout is on that list — with the clock at a fixed width there is no
+moment at which what is on screen has to be rearranged.
 
 ## Settings
 

@@ -2,11 +2,7 @@ import {
 	FRONT_DISPLAY_HEIGHT,
 	FRONT_DISPLAY_WIDTH,
 } from "../../constants/device.ts";
-import {
-	MS_PER_HOUR,
-	MS_PER_MINUTE,
-	MS_PER_SECOND,
-} from "../../constants/time.ts";
+import { MS_PER_MINUTE, MS_PER_SECOND } from "../../constants/time.ts";
 import { COUNTDOWN_METRICS } from "../../fonts.ts";
 import { fitText, maxLinesIn } from "../../text.ts";
 import { loadBlocks, mirrorBlocks } from "./blocks.ts";
@@ -79,18 +75,22 @@ const CONTENT_WIDTH =
 	FRONT_DISPLAY_WIDTH - EDGES * (BORDER_THICKNESS + PADDING);
 const CONTENT_RIGHT = CONTENT_LEFT + CONTENT_WIDTH - LAST_PIXEL;
 
-// The countdown is monospaced and comes in exactly two widths, so the column
-// is sized to whichever one the remaining time will actually produce. Under an
-// hour that leaves the name three quarters of the display; over one it gives
-// up ten pixels, which is the price of the hours being on screen at all.
+// The countdown is monospaced and comes in exactly two widths: seventeen
+// pixels as MM:SS, twenty-seven once the hours are showing. The hours are
+// asked for on every block, so the column is the wide one always.
 //
-// Measured from the block's end rather than from the countdown, because the
-// device is the one drawing it and this has to agree with what the device will
-// decide.
-const countdownWidth = (remainingMs: number): number =>
-	remainingMs >= MS_PER_HOUR
-		? COUNTDOWN_METRICS.widthWithHours
-		: COUNTDOWN_METRICS.width;
+// The device would otherwise drop the hours at the hour mark and take ten
+// pixels with them, which is ten pixels the name could have back -- and the
+// whole layout would have to move to collect them, at an instant our clock and
+// the device's have to agree on to the tick. So a block over an hour was drawn
+// one way and the same block drawn another way an hour from its end, with only
+// the longer ones ever showing the second layout at all.
+//
+// Fixing the column costs the name those ten pixels on every block and buys a
+// display where nothing moves: no reflow, and no leading "0:" appearing and
+// disappearing partway through. What is on screen is then also what every
+// block was drawn with, rather than what the short ones happen to get.
+const { widthWithHours: COUNTDOWN_WIDTH } = COUNTDOWN_METRICS;
 
 // The countdown sits against the right edge of the content area, centred on
 // the height of its own ink.
@@ -111,8 +111,8 @@ const COUNTDOWN_Y =
 // the longest tail and the frame.
 const TAIL_ROOM = 1;
 
-const nameRegion = (remainingMs: number): Region => ({
-	width: CONTENT_WIDTH - COLUMN_GAP - countdownWidth(remainingMs),
+const nameRegion = (): Region => ({
+	width: CONTENT_WIDTH - COLUMN_GAP - COUNTDOWN_WIDTH,
 	height: CONTENT_HEIGHT,
 	tailRoom: TAIL_ROOM,
 });
@@ -147,34 +147,12 @@ const NO_FILL_COLORS = ["#00000000"];
 const unixSeconds = (date: Date): string =>
 	String(Math.ceil(date.getTime() / MS_PER_SECOND));
 
-// The moments the drawing has to be made again: when the phase colour changes,
-// and when the countdown drops its hours and the layout can be reflowed around
-// a narrower clock.
-//
-// The reflow is scheduled a second after the hour mark rather than on it. The
-// device drives the countdown from its own clock, and asking for the narrow
-// layout at the very instant ours says an hour is left would put a
-// still-showing "1:00:00" in a column too small for it if the two disagree by
-// so much as a tick.
-const RESIZE_GUARD_MS = MS_PER_SECOND;
-
-const nextChangeAt = (block: Focus, now: Date): Date => {
-	const phaseChange = nextPhaseChangeAt(block, now);
-	const resize = new Date(block.end.getTime() - MS_PER_HOUR + RESIZE_GUARD_MS);
-
-	return resize.getTime() > now.getTime() &&
-		resize.getTime() < phaseChange.getTime()
-		? resize
-		: phaseChange;
-};
-
 const drawFocus = async (
 	{ bar, applicationName, priority }: ProgramContext,
 	block: Focus,
 	now: Date,
 ): Promise<DrawResult> => {
 	const color = colorFor(phaseAt(block, now));
-	const remainingMs = block.end.getTime() - now.getTime();
 
 	// Handing the device the end of the block as an expiry means it takes the
 	// drawing down itself, on time, even if this process is not around to do
@@ -182,7 +160,7 @@ const drawFocus = async (
 	// reaching zero and the elements disappearing are then the same instant.
 	const displayUntil = unixSeconds(block.end);
 
-	const region = nameRegion(remainingMs);
+	const region = nameRegion();
 	const { font, lines: fitted } = fitText(block.name, region);
 	const nameCenterX = CONTENT_LEFT + Math.floor(region.width / SIDES);
 
@@ -229,7 +207,7 @@ const drawFocus = async (
 				type: "countdown",
 				timestamp: unixSeconds(block.end),
 				direction: "time_left",
-				show_hours: "when_non_zero",
+				show_hours: "always",
 				color,
 				display: "front",
 				align: "top_right",
@@ -242,10 +220,13 @@ const drawFocus = async (
 		],
 	});
 
-	// Nothing else about this block changes until it does, and the device is
-	// counting down without help, so there is no reason to come back sooner.
+	// The colour is the only thing about this block that changes on its own.
+	// The clock is a fixed width and the device ticks it down itself, so there
+	// is no instant at which what is on screen has to be rearranged -- and
+	// nothing here has to agree with the device's own clock about when such an
+	// instant falls.
 	return {
-		nextDrawInMs: nextChangeAt(block, now).getTime() - now.getTime(),
+		nextDrawInMs: nextPhaseChangeAt(block, now).getTime() - now.getTime(),
 	};
 };
 

@@ -8,11 +8,7 @@ import {
 	it,
 	vi,
 } from "vitest";
-import {
-	MS_PER_HOUR,
-	MS_PER_MINUTE,
-	MS_PER_SECOND,
-} from "../../../constants/time.ts";
+import { MS_PER_MINUTE, MS_PER_SECOND } from "../../../constants/time.ts";
 import { createFakeBar } from "../../../test/bar.ts";
 import {
 	BLOCK_END,
@@ -167,7 +163,7 @@ describe("the focus program", () => {
 			const fake = createFakeBar();
 			const context = await start([
 				{
-					name: "TEST wraps here",
+					name: "TEST two lines",
 					start: BLOCK_START.toISOString(),
 					end: BLOCK_END.toISOString(),
 				},
@@ -180,7 +176,7 @@ describe("the focus program", () => {
 				.filter(({ text }) => text.trim() !== "");
 
 			expect(lines).toHaveLength(2);
-			expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST wraps here");
+			expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST two lines");
 		});
 
 		it("counts down to the end of the block, which the device ticks itself", async () => {
@@ -193,6 +189,11 @@ describe("the focus program", () => {
 
 			expect(countdown?.timestamp).toBe(unixSeconds(BLOCK_END));
 			expect(countdown?.direction).toBe("time_left");
+
+			// Always, so the clock is one width for the whole of every block
+			// and nothing around it has to move when it would otherwise have
+			// dropped them.
+			expect(countdown?.show_hours).toBe("always");
 		});
 
 		// Expiring at the block's end means a process that dies mid-block cannot
@@ -280,36 +281,6 @@ describe("the focus program", () => {
 			expect(
 				Number(countdown?.timestamp) * MS_PER_SECOND,
 			).toBeGreaterThanOrEqual(end.getTime());
-		});
-
-		// The countdown drops its hours an hour from the end and gets 10px
-		// narrower, which is 10px the name can have back -- but only if the
-		// program comes back to redraw it.
-		it("asks to be drawn again when the countdown loses its hours", async () => {
-			const now = new Date("2026-01-01T09:30:00Z");
-			const end = new Date("2026-01-01T12:00:00Z");
-
-			vi.setSystemTime(now);
-
-			const fake = createFakeBar();
-			const context = await start([
-				{
-					name: "TEST",
-					start: BLOCK_START.toISOString(),
-					end: end.toISOString(),
-				},
-			]);
-
-			const result = await focus.draw({ ...context, bar: fake.bar });
-			const wakesAt = now.getTime() + (result.nextDrawInMs ?? 0);
-
-			// Just past the hour mark, rather than on it: the device runs the
-			// countdown off its own clock, and a tick of disagreement would
-			// put an hours-wide reading in a column sized without them.
-			expect(wakesAt).toBeGreaterThan(end.getTime() - MS_PER_HOUR);
-			expect(wakesAt).toBeLessThanOrEqual(
-				end.getTime() - MS_PER_HOUR + MS_PER_SECOND,
-			);
 		});
 
 		it("asks to be drawn again when the colour next changes, not sooner", async () => {
