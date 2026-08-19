@@ -223,7 +223,7 @@ them, which is to say when it runs: a misspelling under a program that is off
 waits there until you turn it on.
 
 [`config.example.yml`](config.example.yml) is committed and is the catalogue:
-every setting, with its default, in a block per program — add to it whenever a
+every setting, at its default, in a block per program — add to it whenever a
 program gains a setting, so there is one place to discover what can be set. The
 copy in `local/` is git-ignored along with everything else in there, which is
 where a secret calendar address belongs.
@@ -231,6 +231,13 @@ where a secret calendar address belongs.
 YAML rather than JSON because a setting is worth a sentence of explanation, and
 the sentence should live in the file you are editing rather than in a separate
 example you have to diff against. Reading it is the one dependency this adds.
+
+What each block carries is a sentence per setting and a link to the program's
+own README, and the argument for the number stays in the README. The two are
+read at different moments: you open the file to change a value and want the
+line you came for to be on the screen, and you open the README when you want to
+know why the value is what it is. An example file that answers the second
+question at length stops answering the first.
 
 Running with no config file at all is fine. Every setting has a default, and
 the tool says which file it did not find on the way past.

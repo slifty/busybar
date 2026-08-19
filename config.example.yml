@@ -1,74 +1,31 @@
-# Copy to local/config.yml and edit. Everything here is optional -- what is
-# shown is what the tool does when a setting is left out.
+# Copy this file to local/config.yml, then edit the copy.
 #
 #     cp config.example.yml local/config.yml
 #
-# `local/` is git-ignored wholesale, which is why the copy belongs there: a
-# schedule of what you are doing all day, and the secret calendar address it
-# comes from, are personal to one machine. This file is committed, and is the
-# catalogue -- add a block here whenever a program gains a setting, so there is
-# one place to discover what can be configured.
-#
-# Running with no config file at all is fine: every setting has a default, and
-# the bar scrolls a greeting.
+# Keep your copy in `local/`. That directory is git-ignored, and a calendar
+# address is a credential.
 
 # ── The bar ───────────────────────────────────────────────────────────────────
 
 device:
-  # The USB-Ethernet address of the bar, printed on its back cover, so it
-  # differs from one device to the next. Reaching a bar over Wi-Fi or the BUSY
-  # cloud proxy needs credentials as well, which this tool does not do yet.
+  # The address of the bar, printed on its back cover. Each bar has its own.
   address: 10.0.4.20
 
 # ── The programs to run ───────────────────────────────────────────────────────
-#
-# The one line to edit to turn a program on or off. What is written under
-# `programs` below stays where you left it either way, so a program you are not
-# running now is a program already configured for the next time you are.
-#
-# Several can run at once. Nothing coordinates them: each draws when it has
-# something to say, and the device gives the screen to whichever of them
-# outranks the rest. With nothing listed at all, the bar runs hello-world.
-#
-# `npm run dev -- focus` runs one program on its own for a single run, whatever
-# is listed here, using the settings written for it below.
-
 run:
-  - hello-world
+  # - hello-world
   # - random-emoji
   # - focus
   # - event
 
-# ── What each program is set up to do ─────────────────────────────────────────
-#
-# One block per program, whether or not it is running. A name that is not a
-# program is refused rather than ignored, since nothing would ever read it.
-#
-# `hello-world` and `random-emoji` take no settings and so have no block here.
-
+# ── Program settings ──────────────────────────────────────────────────────────
 programs:
-  # Interrupts you before an appointment starts, with its name and a countdown
-  # to it. Draws nothing the rest of the time.
-  #
-  # Meant to run alongside `focus`: that says what you should be thinking about
-  # now, this says what you are about to be late for. It draws at priority 91,
-  # one above an active BUSY or CUSTOM session, so an alert interrupts a focus
-  # session you started. That is deliberate -- a focus session does not make
-  # the meeting go away.
+  # Interrupts you before an appointment starts.
+  # What each setting does: src/programs/event/README.md#settings
   event:
-    # The appointment calendars to watch, as `https` URLs or paths to `.ics`
-    # files. As many as you have, and at least one: a program watching no
-    # calendars looks exactly like a working one, since drawing nothing is
-    # what this does when nothing is coming up, so it is refused instead.
-    #
-    # They are read together and pooled, so which feed an appointment came
-    # from stops mattering the moment it is read. That is why this is a list
-    # rather than named entries -- the names would have to be unique, since
-    # YAML rejects a repeated key, and would mean nothing. Group them with a
-    # comment, and keep as many under each heading as you like.
-    #
-    # How much warning an appointment gets depends on what the calendar says
-    # about where it is -- see `leads` below.
+    # The calendars to watch, as https URLs or paths to .ics files. Give at
+    # least one. This program shows nothing until an appointment is near, so a
+    # program with no calendar looks exactly like one that works.
     # calendars:
     #   # work
     #   - https://calendar.google.com/calendar/ical/…/basic.ics
@@ -76,91 +33,37 @@ programs:
     #   # personal
     #   - local/personal.ics
 
-    # How many minutes of warning each kind of appointment gets.
-    #
-    # The numbers are about travel rather than importance: what differs is how
-    # long it takes to be where the appointment is. They are here because that
-    # is a fact about your day rather than about this tool -- somebody whose
-    # meetings are all in the next room wants a minute, and somebody with a
-    # commute to one wants half an hour.
-    #
-    # `located` is an entry with somewhere physical written on it, `url` is one
-    # with a link, and `plain` is one that says neither. A location that is
-    # itself a link counts as a link, and a room wins over a link when an entry
-    # carries both.
+    # The minutes of warning an appointment gets. `located` is an appointment
+    # with a place on it, `url` is one with a link, and `plain` is one with
+    # neither. The numbers are about how long it takes to get there.
     leads:
       located: 30
       url: 5
       plain: 5
 
-    # How often the calendars are read again, in minutes.
-    #
-    # Reading is on its own clock and has nothing to do with drawing: the bar
-    # is not asked to redraw to find out whether the day changed, and a feed
-    # is not fetched again because a chime repeated. Anything added to a
-    # calendar is invisible until the next read, so this is the longest a
-    # meeting entered on your phone can take to reach the bar -- and each read
-    # is a fetch of every feed in full, which for a Google calendar is a
-    # year's history, so it is not free either.
+    # The minutes between reads of the calendars. This is the longest an
+    # appointment added elsewhere can take to reach the bar.
     refresh: 5
 
-    # How long the last successful read stays worth drawing, in hours.
-    #
-    # A read that fails keeps whatever the last good one found, so this is
-    # how long the bar carries on showing it. A feed that answered badly is
-    # retried for nearly four minutes before a read is called failed at all,
-    # and one that fails after that has usually told you nothing new about
-    # today -- so covering a schedule that is still current with an error
-    # would take the display away from the meeting it was put there for.
-    #
-    # Past this, the failure goes on the bar instead. It has to eventually:
-    # a bar showing nothing is what this program looks like when it is
-    # working, so a subscription that broke overnight would otherwise look
-    # exactly like a quiet day. Until then it is written to the log only.
-    #
-    # A calendar that cannot be read when the tool starts is not covered by
-    # this and still refuses to start, since there is nothing already in hand
-    # to draw in its place.
+    # The hours a read that fails keeps drawing what the last read that worked
+    # found. After that, the bar shows the failure instead.
     stale: 24
 
-    # The noise an appointment with no physical location makes, in seconds.
-    #
-    # Only those: something across town is missed half an hour before it
-    # starts, and no chime thirty seconds out was going to save it. A call you
-    # are meant to be on is missed by exactly the thirty seconds you spent not
-    # noticing, which is what this is for.
-    #
-    # `lead` is how long before the start it begins. `linger` is how long it
-    # keeps going once the appointment has started and nobody has pressed a
-    # button on the bar to say they have seen it -- the alert is meant to
-    # continue until it is acknowledged, and an unattended bar acknowledges
-    # nothing, so something has to end it. Set `linger` to 0 to have the alert
-    # stop at the start, as a located one does.
+    # The chime an appointment with no place to be makes. `lead` is the seconds
+    # before the start that it begins. `linger` is the seconds it continues
+    # after the start while nobody answers it. Set `linger` to 0 to stop the
+    # chime at the start.
     sound:
       lead: 30
       linger: 120
 
-  # Shows the focus block you are in and how long is left of it.
+  # Shows the focus block you are in and the time left of it.
+  # What each setting does: src/programs/focus/README.md#settings
   focus:
-    # An iCalendar feed to read focus blocks from -- either an https URL or a
-    # path to an .ics file. Left out, the schedule file below is read instead;
-    # writing one here puts it in charge.
-    #
-    # In Google Calendar both come from Settings for the calendar in question:
-    # "Secret address in iCal format" is the URL, and "Export calendar"
-    # downloads a zip with an .ics inside it. The URL keeps up with edits on
-    # its own; a downloaded file is a snapshot and goes stale, so prefer the
-    # URL unless you have a reason not to. Anyone holding the secret address
-    # can read the calendar, which is the other reason this file lives in
-    # `local/` rather than anywhere committed.
+    # The iCalendar feed to read focus blocks from, as an https URL or the path
+    # to an .ics file. With no feed, the file below is read instead.
     # calendar: https://calendar.google.com/calendar/ical/…/basic.ics
 
-    # Where the schedule is read from when no calendar is set, relative to the
-    # working directory. Hand-written JSON -- the quickest way to try
-    # something without exporting anything.
-    #
-    # When a calendar IS set, this file is written rather than read: every
-    # start replaces it with what the calendar said, so opening it always
-    # answers "what is the bar working from?". Anything typed in it by hand is
-    # lost on the next start unless the calendar above is taken back out.
+    # The schedule file, relative to the working directory. It is read when no
+    # calendar is set. When one is set, it is written on each start instead.
     file: local/focus.json

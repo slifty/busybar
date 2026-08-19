@@ -168,9 +168,11 @@ programs:
   is how a suite configures a program without a file.
 
 `config.example.yml` is committed at the root and is the catalogue: one block
-per program, every setting with its default and the prose explaining it. Adding
-a setting without adding it there leaves it undiscoverable, so treat the two as
-one change. `local/` is git-ignored wholesale, which is why the real file lives
+per program, every setting at its default, a sentence saying what each one is,
+and a link to the program's README. Adding a setting without adding it there
+leaves it undiscoverable, so treat the two as one change — and put the argument
+for the value in the README rather than in the file, which is read by somebody
+looking for a line to edit. `local/` is git-ignored wholesale, which is why the real file lives
 there — a secret calendar address is a credential.
 
 Facts about the hardware — the default address, the default draw priority, the
