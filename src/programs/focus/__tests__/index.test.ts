@@ -15,9 +15,10 @@ import {
 	BLOCK_START,
 	createSchedules,
 	drawnName,
+	frameOf,
 	isCountdown,
-	isRectangle,
 	isText,
+	solidsOf,
 } from "../../../test/focus.ts";
 import { colorFor } from "../focus.ts";
 import { IDLE_REFRESH_MS, focus } from "../index.ts";
@@ -78,7 +79,7 @@ describe("the focus program", () => {
 	});
 
 	describe("while a block is running", () => {
-		it("draws a frame, the block's name, and a countdown, in one go", async () => {
+		it("draws a frame, the block's name, a countdown, and a bar, in one go", async () => {
 			const fake = createFakeBar();
 			const context = await start();
 
@@ -88,9 +89,13 @@ describe("the focus program", () => {
 
 			const elements: Elements = fake.draws[0]?.elements ?? [];
 
-			expect(elements.filter(isRectangle)).toHaveLength(1);
+			expect(frameOf(elements)).toBeDefined();
 			expect(elements.filter(isCountdown)).toHaveLength(1);
 			expect(elements.filter(isText).length).toBeGreaterThan(0);
+
+			// The line under the clock: what is behind you, what is ahead, and
+			// the pixel between them.
+			expect(solidsOf(elements)).toHaveLength(3);
 		});
 
 		// Element ids stay on the device until they expire or are drawn over,
@@ -191,8 +196,8 @@ describe("the focus program", () => {
 			expect(countdown?.direction).toBe("time_left");
 
 			// Always, so the clock is one width for the whole of every block
-			// and nothing around it has to move when it would otherwise have
-			// dropped them.
+			// and nothing around it has to be moved when it would otherwise
+			// have dropped them.
 			expect(countdown?.show_hours).toBe("always");
 		});
 
@@ -220,7 +225,7 @@ describe("the focus program", () => {
 
 			const elements = fake.draws[0]?.elements ?? [];
 
-			expect(elements.find(isRectangle)?.border_color).toBe(colorFor("rampUp"));
+			expect(frameOf(elements)?.border_color).toBe(colorFor("rampUp"));
 			expect(elements.find(isCountdown)?.color).toBe(colorFor("rampUp"));
 
 			for (const text of elements.filter(isText)) {
@@ -244,7 +249,7 @@ describe("the focus program", () => {
 
 				await focus.draw({ ...context, bar: fake.bar });
 
-				const border = (fake.draws[0]?.elements ?? []).find(isRectangle);
+				const border = frameOf(fake.draws[0]?.elements ?? []);
 
 				expect(border?.border_color).toBe(colorFor(phase));
 			},
@@ -283,13 +288,18 @@ describe("the focus program", () => {
 			).toBeGreaterThanOrEqual(end.getTime());
 		});
 
-		it("asks to be drawn again when the colour next changes, not sooner", async () => {
+		// The bar wants a draw of its own every time it loses a pixel, so what
+		// this asks is that a colour change still wins when it is the sooner of
+		// the two -- half a minute out here, against a pixel two minutes off.
+		it("asks to be drawn again at the next colour change when that is sooner", async () => {
+			vi.setSystemTime(new Date("2026-01-01T09:14:30Z"));
+
 			const fake = createFakeBar();
 			const context = await start();
 
 			const result = await focus.draw({ ...context, bar: fake.bar });
 
-			expect(result.nextDrawInMs).toBe(MS_PER_MINUTE);
+			expect(result.nextDrawInMs).toBe(30 * MS_PER_SECOND);
 		});
 	});
 

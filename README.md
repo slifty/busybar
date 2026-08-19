@@ -180,9 +180,9 @@ Programs schedule themselves rather than being polled: `draw` returns the
 number of milliseconds until it wants to be called again, or nothing at all if
 the device can sustain what was drawn on its own. The interesting moments are
 rarely evenly spaced — a focus block changes colour at two known instants and
-is static in between — and redrawing is not free, since it restarts scroll
-animations. Asking to be woken at the exact moment something changes keeps the
-screen correct without redrawing to check.
+gives up a pixel of its progress line at twenty-seven more — and redrawing is not free,
+since it restarts scroll animations. Asking to be woken at the exact moment
+something changes keeps the screen correct without redrawing to check.
 
 ## Configuration
 
