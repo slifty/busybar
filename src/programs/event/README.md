@@ -100,11 +100,18 @@ the same code.
 How you get somewhere is what decides how much warning it is worth, and the
 numbers are about travel rather than importance:
 
-| The calendar says   | Warning    | Why                                           |
-| ------------------- | ---------- | --------------------------------------------- |
-| A physical location | 30 minutes | Long enough to get there                      |
-| A URL               | 5 minutes  | Long enough to finish a sentence and click it |
-| Neither             | 5 minutes  | Treated as a link — see below                 |
+| The calendar says   | Default warning | Why                                           |
+| ------------------- | --------------- | --------------------------------------------- |
+| A physical location | 30 minutes      | Long enough to get there                      |
+| A URL               | 5 minutes       | Long enough to finish a sentence and click it |
+| Neither             | 5 minutes       | Treated as a link — see below                 |
+
+Those are defaults rather than the rule. `leads` in the config file sets each of
+the three, in minutes, because how far away your meetings are is a fact about
+your day rather than about this tool — somebody whose appointments are all in
+the next room wants a minute, and somebody with a commute to one wants half an
+hour. The reasoning above is what the numbers mean, not an argument you have to
+accept.
 
 A link is read from `URL`, `CONFERENCE`, or `X-GOOGLE-CONFERENCE`, whichever is
 set first. The last of those is what Google Calendar actually writes for a Meet
@@ -148,27 +155,161 @@ interrupted by a meeting alert.** That is the intended direction. A focus
 session does not make the meeting go away, and a bar being tactful about it is a
 bar letting you miss it.
 
+## The sound
+
+Thirty seconds before the start, an appointment **with no physical location**
+starts chiming: the firmware's own `calendar_event_starts.snd`, replayed every
+ten seconds until it is acknowledged.
+
+Only those. Something across town is missed half an hour before it starts, and
+no chime thirty seconds out was ever going to save it — whereas a call you are
+meant to be on is missed by exactly the thirty seconds you spent not noticing,
+which is the failure this is for. So the sound is for `url` and `plain` entries
+and never for `located` ones, which is the same split as "did the calendar name
+a place".
+
+Four and a half of the five minutes are silent. Looking at a yellow frame is
+enough until it is not, and a bar that chimed for the whole lead would be a bar
+you turn down.
+
+The chime is replayed rather than played once because it is under two seconds
+long and the alert is meant to keep asking. Ten seconds apart leaves a clear gap
+between chimes, which is what makes it read as an alarm wanting an answer rather
+than as a siren — and each repeat costs a draw, which costs a read of every
+calendar, so it is deliberately not faster.
+
 ## How an alert ends
 
-It expires. Every element is drawn with the appointment's start as its
-`display_until`, so the device takes the alert down itself, at exactly the
-moment the appointment begins, and the built-in clock comes back on its own. The
-countdown reaching zero and the alert disappearing are the same instant, and a
-process that dies mid-alert cannot leave one stranded on the display.
+Three ways, and the ordinary one is that it expires. Every element is drawn with
+the alert's end as its `display_until`, so the device takes it down itself, on
+time, and the built-in clock comes back on its own. A process that dies
+mid-alert cannot leave one stranded on the display.
 
-Nothing acknowledges an alert, because nothing can yet. The button presses on
-the bar are readable — they arrive as `BSB_Input.InputEvent` on the device's
-status WebSocket — but acting on them needs the `Program` contract to grow a way
-to react to something other than the clock, which is
-[deliberately not in this version](../../program.ts). Sound is missing for the
-same reason it would be pointless without acknowledgement: an alert you cannot
-silence is one you learn to resent.
+When the alert ends depends on whether it makes a noise:
 
-The consequence to know about is that **the 30-second alert from the original
-design is not here.** Everything with no physical location was to get a sound
-30 seconds out, continuing until acknowledged; without either half of that,
-there is nothing meaningful to do at the 30-second mark that the five-minute
-alert is not already doing.
+| Alert                | Ends                                             |
+| -------------------- | ------------------------------------------------ |
+| Somewhere to be      | At the appointment's start                       |
+| Anything that chimes | Two minutes after the start, unless acknowledged |
+
+A silent alert's whole job is getting you there on time, which is over once it
+is time — so the countdown reaching zero and the alert disappearing are the same
+instant. One that chimes has to outlast the start, because it is supposed to
+continue until somebody says they have seen it, and the screen going quiet while
+the bar is still shouting would be the bar contradicting itself.
+
+Past the start the clock is replaced by the word **`NOW`**. The device clamps the
+digits at `00:00` rather than counting negative, which is right as far as it
+goes — but a clock reading zero looks like a timer that has _finished_, which is
+the wrong impression for the one moment the bar is trying to say you are late. A
+word says it without arithmetic, and only an alert that outlasts its start ever
+shows it: one with somewhere to be has already gone.
+
+**The frame blinks while this lasts**, half a second lit and half a second dark.
+The frame rather than the whole alert, and rather than the word: a name and a
+`NOW` that came and went would be a message you have to wait to read, which is
+the opposite of what an alert is for. Everything stays legible the entire time
+and only the border moves — and the border is already the part doing the
+interrupting, so it is the part there is left to escalate.
+
+That costs a draw twice a second for as long as it goes on, which is bounded by
+`sound.linger` and is the most urgent state the tool has. It also means the
+chime can no longer ride on the draw loop: it used to play once per draw, which
+gave a ten-second repeat only because the draws happened to be ten seconds
+apart, and would now be two solid minutes of noise. What the alert repeats and
+what the screen repeats are tracked separately.
+
+`NOW` is set in `small`, which is exactly the five rows the digits gave back, so
+nothing above it moves. The countdown is parked off the left of the display
+rather than left out of the draw — an element id outlives the drawing that
+stopped using it, and a countdown has no blank to send the way a text element
+has a single space. Clearing the application instead would blink the whole alert
+off and on at the moment it most wants to be read.
+
+One case does not wait for the expiry: an alert whose appointment has stopped
+being one. If the meeting is cancelled, moved, or the calendar simply stops
+mentioning it, the next draw takes the alert down itself — the device knows
+nothing about the calendar, so its expiry would leave a yellow frame up for a
+meeting that is not happening.
+
+**The time box is the third way, and it exists because an unattended bar
+acknowledges nothing.** Without a limit, one appointment nobody was there for
+leaves the bar chiming until somebody comes back to the desk, which is a worse
+thing to walk in on than a missed meeting. Two minutes is long enough to reach
+the bar from the next room and short enough that a bar left alone falls quiet
+before anybody minds. `sound.linger` moves it, and `0` makes a chiming alert end
+at the start like a silent one.
+
+## Acknowledging it
+
+**Press any of the bar's three buttons and the alert is answered:** the sound
+stops, the alert comes off the screen, and neither comes back for that
+appointment.
+
+Any of them, deliberately. The bar has three buttons and this program has one
+thing to say, and a rule about which one counts is a rule you have to remember
+at the exact moment you are late for something.
+
+It answers whatever is on screen, chiming or not. Acknowledgement was asked for
+so that a noise could be stopped, but a bar that only takes an answer while it
+is making a noise is a bar with a rule nobody was told — the yellow frame is the
+same interruption either way.
+
+Acknowledging is about one alert rather than about the day. The next appointment
+gets its own interruption, and a meeting moved to a different time is a
+different alert.
+
+It is remembered in memory and nowhere else. Acknowledgement is a fact about the
+last few minutes, and a process that has restarted was not there when the button
+was pressed.
+
+### Getting a press into a Node process
+
+This is the one part of the tool that does not talk HTTP, and it is worth
+knowing why, because the HTTP API looks like it should be enough and is not:
+
+- **`POST /api/input` is the wrong direction.** It sends a keypress _to_ the
+  bar. Nothing reports one coming back, and no `/api/status` endpoint carries the
+  buttons.
+- **The device's state stream does carry them**, as
+  `BSB_State.StateUpdate.input` on the WebSocket at `/api/status/ws`.
+- **`busy-lib` cannot read that stream from Node.** Its `StateStream` runs in a
+  `SharedWorker`, which is browser-only.
+
+The protocol underneath is not browser-only, though. A plain `WebSocket`
+connects, `{"enable": true}` starts the flow, and the four fields a press
+occupies decode without a protobuf runtime — which is what
+[`src/input/`](../../input/) does. The runner owns one connection for the whole
+process and opens it only if some program declares `onButton`, so a run with no
+program listening never opens a socket at all.
+
+The cost of this is stated rather than hidden: the alert's screen and sound need
+only HTTP, and acknowledgement needs the socket. A bar whose buttons cannot be
+heard still draws and chimes exactly as it would otherwise — it just cannot be
+answered, and falls back to the time box.
+
+**The socket is not a USB-only thing.** It is the same HTTP server as everything
+else, on the same routes, behind the same access gate: with `/api/access` set to
+`disabled` the Wi-Fi address answers 403 to the WebSocket upgrade and to every
+other request alike, and over USB it answers 101 and 200. So the stream follows
+whatever transport the rest of the tool is on. What is missing for a bar reached
+over the network is a credential rather than a capability — see the device notes
+in [`AGENTS.md`](../../../AGENTS.md). The one place this does not hold is the
+cloud proxy, whose stream is JSON rather than protobuf and which this decoder
+would not read.
+
+## Handing the screen back
+
+Whenever an alert stops — answered, expired, or timed out — this program tells
+the runner it has let the display go, and every other program draws again.
+
+That is not politeness. The device **destroys** the elements underneath a
+higher-priority draw rather than covering them, and never restores them, so an
+alert that came and went leaves the bar blank rather than back where it was.
+`focus` cannot notice: its own draw succeeded, and it will not draw again until
+the next phase change, which mid-block can be hours off. Measured on the bar,
+not reasoned about — an application drawing at 50, interrupted at 91, is gone
+the moment the interruption clears.
 
 ## When two alerts overlap
 
@@ -234,25 +375,50 @@ is not written for this tool and one odd entry should not take the rest down:
 
 ## Keeping up
 
-The calendars are read on every draw, not held from startup, so a meeting added
-this morning reaches a process that started yesterday and a cancelled one stops
-alerting without a restart.
+The calendars are read on a clock of their own, every five minutes by default,
+and **nothing about drawing is involved**. `draw` uses whatever was last read
+and fetches nothing.
 
-Between alerts the program will not go more than fifteen minutes without looking
-again, even when the next alert it can see is hours off — otherwise a meeting
-added ahead of that one would be missed, and a day whose appointments are all
-done would never be looked at again. Nothing is on screen at those moments, so
-the wake-up costs a read and no device traffic.
+Those are two different questions and used to be one. Drawing is about the next
+few seconds and happens when something on screen has to change; reading is about
+the next few hours and should happen whether or not anything is on screen at
+all. Tying them together meant a program with nothing to show had to be woken on
+a timer purely to look at a feed, and a program chiming every ten seconds
+re-fetched every calendar every ten seconds to redraw pixels it had already
+drawn.
 
-While an alert is up, the next draw is whichever comes first of the appointment
-starting and a sooner appointment's window opening. The device ticks the
-countdown on its own in between, so a typical alert is one draw.
+So the program now asks for no draws at all on a day with nothing left in it,
+and the refresher wakes it if that stops being true. **`refresh` is the longest a
+meeting entered on your phone can take to reach the bar** — and since an alert
+with no physical location only opens five minutes before the start, an
+appointment created less than `refresh` plus its lead before it begins can be
+missed entirely. Somewhere-to-be entries have half an hour of lead and absorb it
+comfortably.
+
+A read that fails is not swallowed. The reason is kept and the next draw throws
+it, so the red `ERROR` goes on the bar — which matters more here than elsewhere,
+because a bar quietly showing nothing is exactly what this program looks like
+when it is working.
+
+While an alert is up, the draws are about the alert alone: when it is due to
+chime, when a sooner appointment's window opens, and when it ends.
 
 ## Settings
 
-| Setting     | Default | What it does                                                                               |
-| ----------- | ------- | ------------------------------------------------------------------------------------------ |
-| `calendars` | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
+| Setting         | Default | What it does                                                                               |
+| --------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `calendars`     | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
+| `leads.located` | `30`    | Minutes of warning for an appointment with somewhere physical to be                        |
+| `leads.url`     | `5`     | Minutes of warning for one with a link                                                     |
+| `leads.plain`   | `5`     | Minutes of warning for one that says neither                                               |
+| `sound.lead`    | `30`    | Seconds before the start that an alert with no physical location starts chiming            |
+| `sound.linger`  | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
+| `refresh`       | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |
+
+An alert is always on screen by the time it chimes, whatever the two blocks say.
+Nothing stops `leads.url` being shorter than `sound.lead`, and a bar chiming
+about an appointment it is not naming is alarming and useless in the same
+breath.
 
 ---
 

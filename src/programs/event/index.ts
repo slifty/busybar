@@ -1,21 +1,28 @@
 import {
 	BUSY_SESSION_PRIORITY,
 	FRONT_DISPLAY_HEIGHT,
+	FRONT_DISPLAY_MIDDLE_X,
 	FRONT_DISPLAY_WIDTH,
 } from "../../constants/device.ts";
-import {
-	MS_PER_HOUR,
-	MS_PER_MINUTE,
-	MS_PER_SECOND,
-} from "../../constants/time.ts";
+import { MS_PER_HOUR, MS_PER_SECOND } from "../../constants/time.ts";
+import { clearApplication } from "../../display.ts";
 import { COUNTDOWN_METRICS, FONT_METRICS, widthOf } from "../../fonts.ts";
 import { fitText, maxLinesIn } from "../../text.ts";
-import { alertAt, nextAlertOpensAt } from "./alerts.ts";
+import { createAcknowledgements } from "./acknowledgements.ts";
+import { alertsFor, isSounding, nextOpensAt, showingAt } from "./alerts.ts";
 import { ALERT_COLOR } from "./appointment.ts";
-import { loadAppointments } from "./appointments.ts";
+import { createRefresher } from "./refresh.ts";
 import { CALENDARS_KEY, eventSettings } from "./settings.ts";
-import type { DrawResult, Program, ProgramContext } from "../../program.ts";
+import { REPEAT_MS, playAlert, stopAlert } from "./sound.ts";
+import type { Button } from "../../input/buttons.ts";
+import type {
+	DrawResult,
+	InputResult,
+	Program,
+	ProgramContext,
+} from "../../program.ts";
 import type { Region } from "../../text.ts";
+import type { Alert } from "./alerts.ts";
 import type { Appointment } from "./appointment.ts";
 
 const BORDER_ELEMENT_ID = "event-border";
@@ -42,18 +49,6 @@ const ALERT_PRIORITY = BUSY_SESSION_PRIORITY + PRIORITY_STEP;
 
 // The length of a list with nothing in it.
 const NO_CALENDARS = 0;
-
-// How long the program will go without reading the calendars again while it
-// has nothing on screen.
-//
-// The calendars are written by something else and change on their own, so
-// waiting only for the next alert we can currently see would miss a meeting
-// added ahead of it -- and, on a day whose appointments are all done, would
-// mean never looking again at all. This is a floor on curiosity, not a poll:
-// it applies only between alerts, where waking costs a fetch and no device
-// traffic.
-const IDLE_REFRESH_MINUTES = 15;
-const IDLE_REFRESH_MS = IDLE_REFRESH_MINUTES * MS_PER_MINUTE;
 
 // The alert is two stacked rows inside a thick frame: the name across the whole
 // width, and how long until it underneath.
@@ -104,6 +99,25 @@ const PADDING = 1;
 
 // The rightmost column of a region is one short of its width.
 const LAST_PIXEL = 1;
+
+// What the countdown would have left to run once the appointment has begun.
+const NO_TIME_LEFT = 0;
+
+// How long the frame stays lit, and then dark, once the appointment has begun.
+//
+// The frame blinks rather than the whole alert, and rather than the word. A
+// name and a "NOW" that came and went would be a message you have to wait to
+// read, which is the opposite of what an alert is for -- everything stays
+// legible the entire time and only the border moves. It is also the part
+// already doing the interrupting: two pixels of yellow around the edge is what
+// makes this readable from across the room, so it is what there is to escalate.
+//
+// Half a second is slow enough to read as deliberate rather than as a fault,
+// and it only ever happens while an appointment has begun and nobody has
+// answered -- which is bounded by `sound.linger`.
+const BLINK_MS = 500;
+const BLINK_PHASES = 2;
+const DARK_PHASE = 1;
 
 // Halving what is left over puts the same amount on each side.
 const SIDES = 2;
@@ -197,12 +211,46 @@ const captionLeft = (remainingMs: number): number =>
 const LABEL_Y = CONTENT_BOTTOM - FONT_METRICS[STARTS_IN_FONT].baseline;
 const COUNTDOWN_Y = CAPTION_INK_TOP - COUNTDOWN_METRICS.inkTop;
 
+// What the caption says once the appointment has begun.
+//
+// "in 00:00" is a sentence that has stopped being true. The digits clamp at
+// zero rather than counting negative, which is right as far as it goes, but a
+// clock reading 00:00 is a thing you have to interpret -- it looks like a timer
+// that has finished, which is exactly the wrong impression for the one moment
+// the bar is trying to say you are late. A word says it without arithmetic.
+//
+// Only an alert that outlasts its start ever shows this. One with somewhere to
+// be ends at the start, so it is gone rather than saying anything.
+//
+// `small` because the caption band is the five rows the digits occupied and
+// `small` is five rows of capitals -- it takes exactly the space the clock gave
+// back, so nothing above it has to move.
+const NOW_LABEL = "NOW";
+const NOW_FONT = "small";
+const NOW_Y = CONTENT_BOTTOM - FONT_METRICS[NOW_FONT].baseline;
+
+// Where the countdown goes when there is nothing left to count.
+//
+// A text element is blanked with a single space, and the same trick is needed
+// here for the same reason: an element id outlives the drawing that stopped
+// using it, so a countdown left out of a draw stays on screen. A countdown has
+// no blank -- the device draws the digits and takes no text -- so the
+// equivalent is to put it where the display is not. Anchored at its right edge,
+// a whole display's width to the left of the origin, it draws nothing.
+//
+// The alternative was clearing the application and drawing again, which would
+// blink the whole alert off and on at the moment it most wants to be read.
+const OFF_SCREEN_X = -FRONT_DISPLAY_WIDTH;
+
 const NAME_COLOR = "#FFFFFFFF";
+
+// Fully transparent: a colour that draws nothing.
+const INVISIBLE = "#00000000";
 
 // The frame carries the colour, so it is drawn as an outline and nothing else.
 // A fill colour is still required by the generated types even where there is
 // no fill to apply.
-const NO_FILL_COLORS = ["#00000000"];
+const NO_FILL_COLORS = [INVISIBLE];
 
 // The countdown element takes its target as seconds-based Unix time, in a
 // string, and the device ticks it down by itself from there.
@@ -213,20 +261,102 @@ const NO_FILL_COLORS = ["#00000000"];
 const unixSeconds = (date: Date): string =>
 	String(Math.ceil(date.getTime() / MS_PER_SECOND));
 
+// What the program has on the screen, and whether it is making a noise.
+//
+// The button is why this exists. A press has to be able to answer the alert
+// you are looking at, and nothing hands the handler what that is -- so the
+// draw leaves it here on its way out. Undefined is the ordinary state: this
+// program draws nothing at all most of the day, and a press then is a press
+// about something else.
+//
+// It is deliberately not the alert's identity written to disk anywhere.
+// Acknowledgement is a fact about the last few minutes, and a process that has
+// restarted was not there when the button was pressed.
+let onScreen: Appointment | undefined = undefined;
+let alarming = false;
+
+// When the chime last played.
+//
+// The repeat used to be "once per draw while sounding", which was only ever
+// right because the draw loop happened to run at the repeat interval. It does
+// not any more: the frame blinks twice a second once an appointment has begun,
+// and a chime on every one of those draws would be a solid two minutes of
+// noise. What the alert repeats and what the screen repeats are two different
+// rhythms, so the chime keeps its own.
+let lastChimeAt: Date | undefined = undefined;
+let acknowledged = createAcknowledgements();
+
+// The calendars, read on their own clock rather than on the draw's.
+const refresher = createRefresher();
+
+// Keeps the chime going, or stops it, and says how long until the next one.
+//
+// Separate from the draw because the two used to be the same thing, and were
+// only ever right by coincidence: "play on every draw while sounding" gave a
+// ten second repeat because the draw loop happened to run every ten seconds.
+// Once the frame blinks twice a second that coincidence becomes two solid
+// minutes of noise, so what the alert repeats and what the screen repeats are
+// tracked apart.
+const keepSounding = async (
+	{ bar, applicationName, log }: ProgramContext,
+	sounding: boolean,
+	now: Date,
+): Promise<number> => {
+	if (!sounding) {
+		if (alarming) {
+			await stopAlert(bar, log);
+		}
+
+		// eslint-disable-next-line require-atomic-updates -- a program's draws never overlap, so there is no interleaved update to lose
+		alarming = false;
+		// Forgotten while silent, so the next alert to open chimes at once
+		// rather than waiting out the gap left by the last one.
+		lastChimeAt = undefined;
+
+		return Infinity;
+	}
+
+	if (
+		lastChimeAt === undefined ||
+		now.getTime() - lastChimeAt.getTime() >= REPEAT_MS
+	) {
+		await playAlert(bar, applicationName);
+		// eslint-disable-next-line require-atomic-updates -- as above
+		lastChimeAt = now;
+	}
+
+	alarming = true;
+
+	return lastChimeAt.getTime() + REPEAT_MS - now.getTime();
+};
+
 const drawAlert = async (
-	{ bar, applicationName, priority }: ProgramContext,
-	appointment: Appointment,
-	appointments: readonly Appointment[],
+	context: ProgramContext,
+	alert: Alert,
+	alerts: readonly Alert[],
 	now: Date,
 ): Promise<DrawResult> => {
+	const { bar, applicationName, priority } = context;
+	const { appointment, endsAt, soundsFrom } = alert;
 	const remainingMs = appointment.start.getTime() - now.getTime();
 
-	// Handing the device the start as an expiry means it takes the alert down
+	// Past the start and still up, which only a chiming alert ever is.
+	const begun = remainingMs <= NO_TIME_LEFT;
+
+	// Worked out from the clock rather than toggled, so that the frame is in
+	// the same phase whichever draw happens to land -- a flag would blink on
+	// the draws rather than on the time, and the draws are not evenly spaced.
+	const dark =
+		begun && Math.floor(now.getTime() / BLINK_MS) % BLINK_PHASES === DARK_PHASE;
+
+	// Handing the device the end as an expiry means it takes the alert down
 	// itself, on time, even if this process is not around to do it -- and the
-	// built-in clock comes back on its own. The countdown reaching zero and the
-	// alert disappearing are then the same instant, which is what makes the
-	// alert end without anything having to acknowledge it.
-	const displayUntil = unixSeconds(appointment.start);
+	// built-in clock comes back on its own. For a silent alert that is the
+	// appointment's own start, so the countdown reaching zero and the alert
+	// disappearing are the same instant. For one that makes a noise it is
+	// later, because the noise is meant to outlast the start and the screen
+	// should not go quiet while the bar is still shouting.
+	const displayUntil = unixSeconds(endsAt);
 
 	const { font, lines: fitted } = fitText(appointment.name, NAME_REGION);
 	const nameCenterX = CONTENT_LEFT + Math.floor(CONTENT_WIDTH / SIDES);
@@ -257,7 +387,7 @@ const drawAlert = async (
 				fill: "none",
 				fill_colors: NO_FILL_COLORS,
 				border_width: BORDER_THICKNESS,
-				border_color: ALERT_COLOR,
+				border_color: dark ? INVISIBLE : ALERT_COLOR,
 				display: "front",
 				align: "top_left",
 				display_until: displayUntil,
@@ -274,21 +404,39 @@ const drawAlert = async (
 				y: NAME_TOP + line.y,
 				display_until: displayUntil,
 			})),
-			{
-				id: STARTS_IN_ELEMENT_ID,
-				type: "text",
-				text: STARTS_IN_LABEL,
-				font: STARTS_IN_FONT,
-				color: ALERT_COLOR,
-				display: "front",
-				align: "top_left",
-				x: captionX,
-				y: LABEL_Y,
-				display_until: displayUntil,
-			},
+			begun
+				? {
+						id: STARTS_IN_ELEMENT_ID,
+						type: "text",
+						text: NOW_LABEL,
+						font: NOW_FONT,
+						color: ALERT_COLOR,
+						display: "front",
+						align: "top_mid",
+						x: FRONT_DISPLAY_MIDDLE_X,
+						y: NOW_Y,
+						display_until: displayUntil,
+					}
+				: {
+						id: STARTS_IN_ELEMENT_ID,
+						type: "text",
+						text: STARTS_IN_LABEL,
+						font: STARTS_IN_FONT,
+						color: ALERT_COLOR,
+						display: "front",
+						align: "top_left",
+						x: captionX,
+						y: LABEL_Y,
+						display_until: displayUntil,
+					},
 			{
 				id: COUNTDOWN_ELEMENT_ID,
 				type: "countdown",
+				// The appointment's own start, not the alert's end. The digits
+				// count down to the thing you are about to be late for, and
+				// the device clamps them at 00:00 rather than going negative --
+				// so an alert still sounding a minute after the start reads as
+				// 00:00, which is exactly what it is.
 				timestamp: unixSeconds(appointment.start),
 				direction: "time_left",
 				show_hours: "when_non_zero",
@@ -297,29 +445,59 @@ const drawAlert = async (
 				// The element's box runs two pixels past its last digit, so
 				// the anchor goes that far beyond where the ink should end.
 				align: "top_right",
-				x: captionRight + COUNTDOWN_METRICS.inkRight,
+				x: begun ? OFF_SCREEN_X : captionRight + COUNTDOWN_METRICS.inkRight,
 				y: COUNTDOWN_Y,
 				display_until: displayUntil,
 			},
 		],
 	});
 
-	// Two things can change what is on screen: this appointment arriving, and
-	// a sooner one's alert opening over the top of it. Whichever comes first
-	// is the next draw, and the device holds the countdown honest in between.
-	const opens = nextAlertOpensAt(appointments, now);
-	const until = Math.min(
-		remainingMs,
-		opens === undefined ? Infinity : opens.getTime() - now.getTime(),
+	// Claimed only once the draw has landed. A draw that was refused put
+	// nothing on the screen, and a press answering an alert nobody can see
+	// would silence the one that is about to replace it.
+	onScreen = appointment;
+
+	// Played on every draw for as long as the window lasts, rather than once
+	// when it opens. The clip is short and the alert is supposed to keep
+	// asking until it is answered, so the repeat is the point -- and the draw
+	// loop is what the program has to time anything with.
+	const untilNextChime = await keepSounding(
+		context,
+		isSounding(alert, now),
+		now,
 	);
 
-	return { nextDrawInMs: until };
+	// Four things can change what is on screen, and the next draw is whichever
+	// comes first: this alert ending, it starting to make a noise, the
+	// appointment beginning -- which is when the clock is replaced by the word
+	// -- and a sooner appointment's alert opening over the top of it. While it
+	// is making a noise there is a fifth, which is the next chime. The device holds the
+	// countdown honest in between all of them.
+	const opens = nextOpensAt(alerts, now);
+	const instants = [endsAt, opens, soundsFrom, appointment.start].flatMap(
+		(instant) =>
+			instant !== undefined && instant.getTime() > now.getTime()
+				? [instant]
+				: [],
+	);
+
+	// The chime and the blink each keep their own rhythm, and the next draw is
+	// whichever of everything comes first.
+	return {
+		nextDrawInMs: Math.min(
+			...instants.map((instant) => instant.getTime() - now.getTime()),
+			untilNextChime,
+			begun ? BLINK_MS : Infinity,
+		),
+	};
 };
 
-// Reading the calendars here is a check, not a cache. `draw` reads them again
-// every time; what this buys is that a feed that cannot be reached, or a
-// config block naming none at all, stops the program now, with the reason,
-// rather than being retried every few seconds behind a bar that sits dark.
+// The first read happens here, and fails the program if it fails: a feed that
+// cannot be reached, or a config block naming none at all, stops things now,
+// with the reason, rather than being retried every few seconds behind a bar
+// that sits dark.
+//
+// Every read after this one is the refresher's, on its own interval.
 //
 // A program watching no calendars is refused rather than run. It would be
 // indistinguishable from a working one -- silence is what this program looks
@@ -327,6 +505,15 @@ const drawAlert = async (
 // has yet to fill in produces, which makes it far more often a mistake than a
 // request.
 const start = async (context: ProgramContext): Promise<void> => {
+	// A run starts having acknowledged nothing and shown nothing. Said here
+	// rather than left to the initialisers so that a second run in the same
+	// process -- which is every run after the first in the test suite -- is not
+	// answering the first one's alerts.
+	onScreen = undefined;
+	alarming = false;
+	lastChimeAt = undefined;
+	acknowledged = createAcknowledgements();
+
 	const settings = eventSettings(context.config);
 
 	if (settings.calendars.length === NO_CALENDARS) {
@@ -335,35 +522,126 @@ const start = async (context: ProgramContext): Promise<void> => {
 		);
 	}
 
-	await loadAppointments(settings);
+	await refresher.begin(settings, context);
 };
 
 const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	const now = new Date();
 
-	// Taken from the block again rather than held from `start`, which costs
-	// nothing: the file was read once, at startup, and this is one key out of
-	// what it said.
-	const settings = eventSettings(context.config);
+	// A calendar that could not be read belongs on the bar, not only in a log.
+	// Silence is what this program looks like when it is working, so a bar
+	// showing nothing because it has not managed to read a feed since breakfast
+	// is indistinguishable from a quiet afternoon -- which is the whole reason
+	// failures are drawn.
+	const failure = refresher.failure();
 
-	// Read afresh on every draw rather than resolved once at startup. The
-	// calendars belong to whatever is filling them in, and a meeting added
-	// this morning has to reach a process that started yesterday.
-	const appointments = await loadAppointments(settings);
-	const alerting = alertAt(appointments, now);
-
-	if (alerting !== undefined) {
-		return await drawAlert(context, alerting, appointments, now);
+	if (failure !== undefined) {
+		throw failure;
 	}
 
-	// Between alerts there is nothing to draw and nothing to clear: the last
-	// alert's elements were given the appointment's start as their expiry, so
-	// the device has already taken them down and handed the screen back.
-	const opens = nextAlertOpensAt(appointments, now);
-	const untilNextAlert =
-		opens === undefined ? Infinity : opens.getTime() - now.getTime();
+	// Taken from the block again rather than held from `start`, which costs
+	// nothing: the file was read once, at startup, and this is a few keys out
+	// of what it said.
+	const settings = eventSettings(context.config);
 
-	return { nextDrawInMs: Math.min(untilNextAlert, IDLE_REFRESH_MS) };
+	// Whatever the refresher last read. Nothing is fetched here: how fresh the
+	// calendars are is its own question, asked on its own clock.
+	const appointments = refresher.appointments();
+
+	acknowledged.keepOnly(appointments);
+
+	// An acknowledged appointment is not an alert at all. Filtering here rather
+	// than at the point of drawing means it is also not what the program waits
+	// for: an alert you have answered must not be what wakes it up.
+	const alerts = alertsFor(appointments, settings).filter(
+		({ appointment }) => !acknowledged.has(appointment),
+	);
+
+	const showing = showingAt(alerts, now);
+
+	if (showing !== undefined) {
+		return await drawAlert(context, showing, alerts, now);
+	}
+
+	if (alarming) {
+		alarming = false;
+		lastChimeAt = undefined;
+		await stopAlert(context.bar, context.log);
+	}
+
+	// An alert that was up and is not any more comes down here, rather than
+	// being left to the expiry it was drawn with.
+	//
+	// Almost always the device has already taken it down: the elements carry the
+	// alert's end as their `display_until` and this draw was scheduled for that
+	// instant, so the clear is a formality. What it is actually for is the case
+	// where the alert stopped being one for a reason the device knows nothing
+	// about -- the meeting was cancelled, or moved, or the calendar it came from
+	// stopped mentioning it.
+	if (onScreen !== undefined) {
+		onScreen = undefined;
+		await clearApplication(context.bar, context.applicationName);
+		context.releaseScreen();
+	}
+
+	// Otherwise there is nothing to draw and nothing to clear, and -- now that
+	// reading the calendars is not this loop's job -- nothing to come back for
+	// until an alert is due. A day with nothing left in it asks for no draws at
+	// all; the refresher is what notices when that stops being true.
+	const opens = nextOpensAt(alerts, now);
+
+	return opens === undefined
+		? {}
+		: { nextDrawInMs: opens.getTime() - now.getTime() };
+};
+
+// A press of any of the bar's three buttons answers the alert on screen.
+//
+// Any of them, deliberately. The bar has three buttons and this program has
+// one thing to say, and a rule about which of them counts is a rule you have
+// to remember at the exact moment you are late for something. The press means
+// "I have seen it", and there is nothing else it could mean while an alert is
+// up.
+//
+// It answers whatever is on screen, sounding or not. Acknowledgement was asked
+// for so that a noise could be stopped, but a bar that only takes an answer
+// while it is making a noise is a bar with a rule nobody was told: the yellow
+// frame is the same interruption either way, and being able to dismiss the one
+// that chimes and not the one that does not would read as a fault.
+//
+// A press with nothing on screen does nothing at all. Every program that takes
+// presses hears every press, so most of what arrives here is somebody using
+// the bar for something else entirely.
+const onButton = async (
+	button: Button,
+	{ bar, applicationName, log, releaseScreen }: ProgramContext,
+): Promise<InputResult> => {
+	if (onScreen === undefined) {
+		return {};
+	}
+
+	acknowledged.acknowledge(onScreen);
+	onScreen = undefined;
+
+	if (alarming) {
+		alarming = false;
+		lastChimeAt = undefined;
+		await stopAlert(bar, log);
+	}
+
+	// The elements were drawn to expire when the alert would have ended, so
+	// they outlast being answered unless they are taken down.
+	await clearApplication(bar, applicationName);
+
+	// Whatever this alert interrupted is gone rather than merely covered: the
+	// device destroys a lower-priority application's elements rather than
+	// hiding them behind ours, and their owner never saw a refusal that would
+	// have told it so. Nothing else will put the screen back.
+	releaseScreen();
+
+	log(`acknowledged by the ${button} button`);
+
+	return { redraw: true };
 };
 
 const event: Program = {
@@ -372,6 +650,7 @@ const event: Program = {
 	priority: ALERT_PRIORITY,
 	start,
 	draw,
+	onButton,
 };
 
-export { ALERT_PRIORITY, IDLE_REFRESH_MS, event };
+export { ALERT_PRIORITY, INVISIBLE, event };

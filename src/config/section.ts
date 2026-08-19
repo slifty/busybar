@@ -17,6 +17,10 @@
 // The count of things in something empty.
 const NONE = 0;
 
+// The smallest a setting measuring a length of time can be. Zero is a coherent
+// thing to ask for -- no warning at all -- and less than none is not.
+const NO_TIME = 0;
+
 interface ConfigSection {
 	// Text, or the default when the setting is absent.
 	readonly string: (key: string, fallback: string) => string;
@@ -33,6 +37,8 @@ interface ConfigSection {
 	// buying no behaviour in return. A list takes as many as you have, and a
 	// comment groups them for the reader.
 	readonly strings: (key: string) => string[];
+	// A count of minutes or seconds, or the default when the setting is absent.
+	readonly number: (key: string, fallback: number) => number;
 	// A block nested inside this one. Absent is empty rather than an error, so
 	// a block nobody has written reads as one where nothing was set.
 	readonly section: (key: string) => ConfigSection;
@@ -149,10 +155,40 @@ const createSection = (
 			.filter((entry) => entry !== BLANK);
 	};
 
+	// A number, and only what YAML already decided was one.
+	//
+	// Every number this file holds is a length of time, so what is refused is
+	// what could not be one: text, however numeric it looks, and anything below
+	// zero. Taking YAML at its word means `5m` is refused where it was written
+	// rather than quietly read as five, which is the failure worth catching --
+	// a lead time silently a sixth of what the file plainly says is a meeting
+	// missed by twenty-five minutes.
+	//
+	// Fractions are allowed. Half a minute is a coherent warning to ask for,
+	// and there is no arithmetic here that a fraction would spoil.
+	const asNumber = (key: string): number | undefined => {
+		const found = at(key);
+
+		if (found === undefined || found === null) {
+			return undefined;
+		}
+
+		if (typeof found !== "number" || !Number.isFinite(found)) {
+			throw new Error(`${file}: ${qualify(key)} must be a number`);
+		}
+
+		if (found < NO_TIME) {
+			throw new Error(`${file}: ${qualify(key)} must not be negative`);
+		}
+
+		return found;
+	};
+
 	return {
 		string: (key, fallback) => asString(key) ?? fallback,
 		optionalString: asString,
 		strings: asStrings,
+		number: (key, fallback) => asNumber(key) ?? fallback,
 		section: (key) => createSection(file, qualify(key), at(key)),
 		names: () => {
 			const keys = Object.keys(values);

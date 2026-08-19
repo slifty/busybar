@@ -12,6 +12,7 @@ import {
 	stopRun,
 	stubProgram,
 } from "../test/runner.ts";
+import type { ProgramContext } from "../program.ts";
 
 const RETRY_DELAY_MS = 5_000;
 
@@ -177,5 +178,138 @@ describe("runPrograms, running several at once", () => {
 				"display cleared",
 			);
 		});
+	});
+});
+
+// The device destroys a lower-priority application's elements rather than
+// hiding them behind a higher-priority one, and never puts them back. Their
+// owner cannot tell: its own draw succeeded, so it never saw the 409 that would
+// have had the runner retry. So the program that interrupted has to say when it
+// is finished, and the runner is what turns that into draws.
+describe("runPrograms, when a program lets the screen go", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	// Long enough that any draw arriving before it was asked for rather than
+	// scheduled.
+	const NEVER_SOON = 60 * 60 * 1_000;
+
+	const capture = (): {
+		readonly of: (context: ProgramContext) => Promise<void>;
+		readonly context: () => ProgramContext | undefined;
+	} => {
+		let captured: ProgramContext | undefined = undefined;
+
+		return {
+			of: async (context) => {
+				captured = context;
+
+				await Promise.resolve();
+			},
+			context: () => captured,
+		};
+	};
+
+	it("draws every other program again", async () => {
+		const fake = createFakeBar();
+		const interrupter = capture();
+		const running = startRun(
+			fake,
+			stubProgram({
+				start: interrupter.of,
+				onDraw: async () => await Promise.resolve({ nextDrawInMs: NEVER_SOON }),
+			}),
+			stubProgram({
+				name: OTHER_STUB_PROGRAM_NAME,
+				onDraw: async () => await Promise.resolve({ nextDrawInMs: NEVER_SOON }),
+			}),
+		);
+
+		await settle();
+
+		expect(programDraws(fake, OTHER_STUB_PROGRAM_NAME)).toHaveLength(1);
+
+		interrupter.context()?.releaseScreen();
+		await settle();
+
+		expect(programDraws(fake, OTHER_STUB_PROGRAM_NAME)).toHaveLength(2);
+
+		await stopRun(running);
+	});
+
+	// Waking the caller as well would have a program that has just cleared the
+	// screen immediately draw over whatever it was making room for.
+	it("does not draw the program that let it go", async () => {
+		const fake = createFakeBar();
+		const interrupter = capture();
+		const running = startRun(
+			fake,
+			stubProgram({
+				start: interrupter.of,
+				onDraw: async () => await Promise.resolve({ nextDrawInMs: NEVER_SOON }),
+			}),
+			stubProgram({ name: OTHER_STUB_PROGRAM_NAME }),
+		);
+
+		await settle();
+		interrupter.context()?.releaseScreen();
+		await settle();
+
+		expect(programDraws(fake)).toHaveLength(1);
+
+		await stopRun(running);
+	});
+
+	// A program that asked never to be drawn again is exactly the one that
+	// needs waking: it is asleep until something it cannot see happens.
+	it("draws a program that had asked not to be drawn again", async () => {
+		const fake = createFakeBar();
+		const sleeper = capture();
+		const running = startRun(
+			fake,
+			stubProgram({
+				start: sleeper.of,
+				onDraw: async () => await Promise.resolve({}),
+			}),
+		);
+
+		await settle();
+
+		expect(programDraws(fake)).toHaveLength(1);
+
+		sleeper.context()?.redraw();
+		await settle();
+
+		expect(programDraws(fake)).toHaveLength(2);
+
+		await stopRun(running);
+	});
+
+	// Nothing is listening yet -- the draw loops do not exist until every
+	// program has been prepared -- and asking for a draw then must not throw.
+	it("ignores a wake-up asked for before the run has started", async () => {
+		const fake = createFakeBar();
+		const running = startRun(
+			fake,
+			stubProgram({
+				start: async (context) => {
+					context.redraw();
+					context.releaseScreen();
+
+					await Promise.resolve();
+				},
+			}),
+		);
+
+		await settle();
+
+		expect(programDraws(fake)).toHaveLength(1);
+
+		await stopRun(running);
 	});
 });

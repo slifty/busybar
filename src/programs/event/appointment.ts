@@ -1,5 +1,3 @@
-import { MS_PER_MINUTE } from "../../constants/time.ts";
-
 // Something you have to be somewhere for.
 //
 // Unlike a focus block, an appointment's duration is not what the bar is for.
@@ -15,11 +13,15 @@ interface Appointment {
 	readonly kind: Kind;
 }
 
-// How much warning an appointment is worth, by how you get to it.
+// How much warning an appointment is worth, by how you get to it, in minutes.
 //
-// The numbers are the whole of the program's judgement, and they are about
-// travel rather than importance: what differs between these is how long it
-// takes to be where the appointment is, not how much the appointment matters.
+// These are defaults rather than the rule -- `leads` in the config file is what
+// actually decides -- but they are the answer for anyone who never writes that
+// block, so the reasoning belongs with the numbers.
+//
+// The reasoning is about travel rather than importance: what differs between
+// these is how long it takes to be where the appointment is, not how much the
+// appointment matters.
 const LEAD_MINUTES = {
 	// A link takes as long as it takes to open, so five minutes is enough to
 	// finish a sentence and click it.
@@ -34,15 +36,28 @@ const LEAD_MINUTES = {
 	// out for a call, but guessing "place" would do the first to every
 	// unlabelled entry in the calendar.
 	//
-	// It shares a number with `url` today and is kept apart from it anyway.
-	// The issue this program came from separates the two, and the version that
-	// gains sound and a button to acknowledge it will need them separated: the
-	// thirty-second alert is for everything with no physical location, which
-	// is these two kinds and not the third.
+	// It shares a number with `url` and is kept apart from it anyway. They are
+	// two different statements -- one is a calendar saying "join this here",
+	// the other is a calendar saying nothing at all -- and the file can give
+	// them different numbers even though the defaults agree.
 	plain: 5,
 } as const;
 
 type Kind = keyof typeof LEAD_MINUTES;
+
+// Whether the calendar named somewhere to physically be.
+//
+// This is the whole of what decides which alerts make a noise. The issue this
+// program comes from asks for sound on everything *without* a physical
+// location, and the reasoning is that those are the ones you can be late to
+// while sitting still: a meeting across town is missed half an hour before it
+// starts, and no chime thirty seconds out was ever going to save it, whereas a
+// call you are meant to be on is missed by exactly the thirty seconds you spent
+// not noticing.
+const hasPlace = ({ kind }: Appointment): boolean => kind === "located";
+
+// Whether this appointment's alert makes a noise.
+const sounds = (appointment: Appointment): boolean => !hasPlace(appointment);
 
 // Yellow, and deliberately none of the three colours a focus block can be.
 //
@@ -53,21 +68,5 @@ type Kind = keyof typeof LEAD_MINUTES;
 // focus block in a phase you had not seen before.
 const ALERT_COLOR = "#FFCC00FF";
 
-const leadMsFor = (kind: Kind): number => LEAD_MINUTES[kind] * MS_PER_MINUTE;
-
-// When the bar should start saying something about this appointment.
-const alertOpensAt = ({ kind, start }: Appointment): Date =>
-	new Date(start.getTime() - leadMsFor(kind));
-
-// Whether the alert for this appointment is the one that should be on screen.
-//
-// Half-open, [opens, start): the alert is done the instant the appointment
-// begins. Its whole job is getting you there on time, which is over once it is
-// time -- and the drawing is handed the start as its expiry, so the device
-// takes it down at exactly the moment this stops being true.
-const isAlerting = (appointment: Appointment, at: Date): boolean =>
-	alertOpensAt(appointment).getTime() <= at.getTime() &&
-	at.getTime() < appointment.start.getTime();
-
-export { ALERT_COLOR, LEAD_MINUTES, alertOpensAt, isAlerting, leadMsFor };
+export { ALERT_COLOR, LEAD_MINUTES, hasPlace, sounds };
 export type { Appointment, Kind };

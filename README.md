@@ -56,10 +56,11 @@ asked for twice.
 
 Everything common to programs lives in the runner: connecting, drawing, waiting
 until a program wants to draw again, tolerating preemption, putting failures on
-the display, and clearing it on the way out. A program supplies a name, a
-description, and a `draw` function. Adding one means adding a folder under
-`src/programs/`, a single entry in `src/programs/index.ts`, and a `README.md`
-in the folder linked from the table above.
+the display, listening to the bar's buttons, and clearing it on the way out. A
+program supplies a name, a description, and a `draw` function. Adding one means
+adding a folder under `src/programs/`, a single entry in
+`src/programs/index.ts`, and a `README.md` in the folder linked from the table
+above.
 
 ### Running several at once
 
@@ -80,8 +81,16 @@ start — rather than one that is always on.
 `event` is the one program that makes that claim. It draws at 91, one above an
 active BUSY or CUSTOM session, so an appointment alert interrupts everything
 including a focus session you started — for the five or thirty minutes it is up,
-and not a moment longer, since the alert expires on its own when the
-appointment begins. Running it alongside `focus` is what it is for.
+and not a moment longer, since the alert takes itself down once it is answered
+or has run out of time. Running it alongside `focus` is what it is for.
+
+**An interrupting program has to hand the screen back.** The device does not
+cover the elements underneath a higher-priority draw — it destroys them, and
+never puts them back. The program underneath cannot tell, since its own draw
+succeeded and it will not draw again until whatever it scheduled comes round. So
+a program that stops occupying the display says so, and the runner draws every
+other program immediately. Without it, acknowledging a meeting alert leaves the
+bar blank until `focus` next has a reason of its own to draw.
 
 Two consequences worth knowing before writing a list:
 
@@ -96,6 +105,32 @@ Two consequences worth knowing before writing a list:
   screen, which for an ordinary program means the survivors of equal priority
   stay preempted behind it — a broken program is not quietly replaced by a
   working one. If nothing at all starts, the tool exits with the reason.
+
+### Pressing the bar
+
+A program can react to the bar's three buttons as well as to the clock, by
+declaring an `onButton` handler. `event` is the one that does: a press answers
+the alert on screen, which stops the sound and takes it down.
+
+The runner owns one connection for the whole process and opens it only if some
+program declares a handler, so a run with nothing listening never opens a socket
+at all. Every listening program then hears every press — the device has three
+buttons and no notion of what is on screen, so deciding whether a press is
+anything to do with you is the program's own business, and the honest answer is
+usually no.
+
+This is the only part of the tool that is not HTTP. `POST /api/input` sends a
+keypress _to_ the bar and nothing reports one coming back, so presses are read
+off the device's own state stream — protobuf over the WebSocket at
+`/api/status/ws`. `busy-lib` wraps that stream in a `SharedWorker` and is
+therefore browser-only, but the protocol underneath is not:
+[`src/input/`](src/input/) connects with a plain `WebSocket` and decodes the four
+fields a press occupies without a protobuf runtime.
+
+Losing that connection costs acknowledgement and nothing else. Everything a
+program draws, and any sound it plays, is HTTP — so a bar whose buttons cannot be
+heard behaves exactly as it would otherwise, and the runner keeps reconnecting in
+the background while it says so once in the log.
 
 ### When something goes wrong
 

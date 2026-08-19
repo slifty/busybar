@@ -113,6 +113,10 @@ const start = async (
 		log: () => {
 			// Nothing here cares what the program had to say.
 		},
+		// `focus` never asks for either: it is the program being interrupted
+		// rather than the one interrupting, and the runner is what wakes it.
+		redraw: () => undefined,
+		releaseScreen: () => undefined,
 	};
 
 	await focus.start?.(context);

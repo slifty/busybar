@@ -12,6 +12,11 @@
 //
 // This draws at the event program's own priority, which outranks everything
 // including a BUSY session, and clears up after itself on the way out.
+//
+// It makes a noise. Any case inside the sound's thirty-second lead chimes,
+// because the program is being run rather than imitated -- which is the point of
+// the tool, and worth knowing before running it in a room with other people in
+// it.
 
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -108,6 +113,10 @@ const CASES: Array<[string, number, boolean]> = [
 	// somewhere to be or it would not be alerting yet.
 	["TEST wide clock", 1799, true],
 	["TEST narrow clock", 29, false],
+	// Past its start and still up, which is what an unacknowledged chiming
+	// alert looks like: the device clamps the countdown at 00:00 rather than
+	// counting negative.
+	["TEST clamped clock", -30, false],
 ];
 
 const context = {
@@ -120,6 +129,9 @@ const context = {
 	log: (message: string) => {
 		console.log(`  ${message}`);
 	},
+	// Nothing here is running alongside anything else.
+	redraw: () => undefined,
+	releaseScreen: () => undefined,
 };
 
 try {
@@ -152,13 +164,21 @@ try {
 		await bar.DisplayClear({ application_name: event.name });
 		await sleep(200);
 
+		// Started rather than only drawn, because reading the calendars is
+		// `start`'s job and `draw` uses whatever was last read. Each case writes
+		// a different calendar, so each case is its own run.
+		await event.start?.(context);
 		await event.draw(context);
 
 		// The device needs a moment to put the elements up before the frame is
 		// worth reading back.
 		await sleep(400);
 
-		console.log(`\n${name}  (starts in ${String(secondsAway)}s)`);
+		console.log(
+			secondsAway < 0
+				? `\n${name}  (started ${String(-secondsAway)}s ago)`
+				: `\n${name}  (starts in ${String(secondsAway)}s)`,
+		);
 		console.log(await capture());
 	}
 } finally {
