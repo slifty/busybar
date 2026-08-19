@@ -1,7 +1,4 @@
-import { mkdtempSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
 import {
 	afterAll,
 	afterEach,
@@ -11,57 +8,36 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { DEFAULT_DRAW_PRIORITY } from "../../../constants/device.ts";
 import {
 	MS_PER_HOUR,
 	MS_PER_MINUTE,
 	MS_PER_SECOND,
 } from "../../../constants/time.ts";
 import { createFakeBar } from "../../../test/bar.ts";
-import { sectionOf } from "../../../test/config.ts";
+import {
+	BLOCK_END,
+	BLOCK_START,
+	createSchedules,
+	drawnName,
+	isCountdown,
+	isRectangle,
+	isText,
+} from "../../../test/focus.ts";
 import { colorFor } from "../focus.ts";
 import { IDLE_REFRESH_MS, focus } from "../index.ts";
-import type { BusyBar } from "@busy-app/busy-lib";
 import type { ProgramContext } from "../../../program.ts";
-
-type Elements = Parameters<BusyBar["DisplayDraw"]>[0]["elements"];
-type Element = Elements[number];
-
-const isText = (
-	element: Element,
-): element is Extract<Element, { type: "text" }> => element.type === "text";
-
-const isCountdown = (
-	element: Element,
-): element is Extract<Element, { type: "countdown" }> =>
-	element.type === "countdown";
-
-const isRectangle = (
-	element: Element,
-): element is Extract<Element, { type: "rectangle" }> =>
-	element.type === "rectangle";
-
-// The name is drawn as one element per line, so what it says is the lines put
-// back together.
-const drawnName = (elements: Elements): string =>
-	elements
-		.filter(isText)
-		.map(({ text }) => text)
-		.join(" ")
-		.trim();
+import type { Elements } from "../../../test/focus.ts";
 
 const NOW = new Date("2026-01-01T09:14:00Z");
-const BLOCK_START = new Date("2026-01-01T09:00:00Z");
-const BLOCK_END = new Date("2026-01-01T10:00:00Z");
 const NEXT_BLOCK_START = new Date("2026-01-01T11:00:00Z");
 
 const unixSeconds = (date: Date): string =>
 	String(Math.floor(date.getTime() / MS_PER_SECOND));
 
-const directory = mkdtempSync(join(tmpdir(), "busybar-program-"));
+const schedules = createSchedules();
 
 afterAll(async () => {
-	await rm(directory, { recursive: true, force: true });
+	await schedules.forget();
 });
 
 beforeEach(() => {
@@ -91,38 +67,10 @@ const SCHEDULE = [
 	},
 ];
 
-// A schedule file of its own per test, so one rewriting its schedule cannot
-// disturb another.
-const scheduleFile = (): string =>
-	join(directory, `${String(Math.random()).slice(2)}.json`);
-
-// Points the program at a schedule and runs its one-time preparation. The path
-// is worth naming when a test means to rewrite the file underneath the program.
 const start = async (
 	blocks: unknown = SCHEDULE,
-	path: string = scheduleFile(),
-): Promise<ProgramContext> => {
-	await writeFile(path, JSON.stringify(blocks), "utf8");
-
-	const { bar } = createFakeBar();
-	const context = {
-		bar,
-		applicationName: focus.name,
-		priority: DEFAULT_DRAW_PRIORITY,
-		config: sectionOf({ file: path }),
-		log: () => {
-			// Nothing here cares what the program had to say.
-		},
-		// `focus` never asks for either: it is the program being interrupted
-		// rather than the one interrupting, and the runner is what wakes it.
-		redraw: () => undefined,
-		releaseScreen: () => undefined,
-	};
-
-	await focus.start?.(context);
-
-	return context;
-};
+	path?: string,
+): Promise<ProgramContext> => await schedules.start(blocks, path);
 
 describe("the focus program", () => {
 	it("is registered under a device-safe application name", () => {
@@ -142,7 +90,7 @@ describe("the focus program", () => {
 
 			expect(fake.draws).toHaveLength(1);
 
-			const { elements } = fake.draws[0] ?? { elements: [] };
+			const elements: Elements = fake.draws[0]?.elements ?? [];
 
 			expect(elements.filter(isRectangle)).toHaveLength(1);
 			expect(elements.filter(isCountdown)).toHaveLength(1);
@@ -444,7 +392,7 @@ describe("the focus program", () => {
 
 	describe("when the schedule changes underneath it", () => {
 		it("draws a block added after it started", async () => {
-			const path = scheduleFile();
+			const path = schedules.path();
 			const context = await start([], path);
 			const before = createFakeBar();
 
@@ -452,7 +400,7 @@ describe("the focus program", () => {
 
 			expect(before.draws).toHaveLength(0);
 
-			await writeFile(path, JSON.stringify(SCHEDULE), "utf8");
+			await schedules.write(SCHEDULE, path);
 
 			const after = createFakeBar();
 
@@ -462,7 +410,7 @@ describe("the focus program", () => {
 		});
 
 		it("stops drawing a block removed after it started", async () => {
-			const path = scheduleFile();
+			const path = schedules.path();
 			const context = await start(SCHEDULE, path);
 			const before = createFakeBar();
 
@@ -470,7 +418,7 @@ describe("the focus program", () => {
 
 			expect(before.draws).toHaveLength(1);
 
-			await writeFile(path, JSON.stringify([]), "utf8");
+			await schedules.write([], path);
 
 			const after = createFakeBar();
 
@@ -482,7 +430,7 @@ describe("the focus program", () => {
 		// The file is someone else's to write, so it can be mid-write or wrong
 		// long after startup. That is the runner's short retry, not a crash.
 		it("fails the draw when the schedule stops being readable", async () => {
-			const path = scheduleFile();
+			const path = schedules.path();
 			const context = await start(SCHEDULE, path);
 
 			await writeFile(path, "{ not json", "utf8");

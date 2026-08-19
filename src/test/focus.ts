@@ -1,4 +1,23 @@
+import { mkdtempSync } from "node:fs";
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_DRAW_PRIORITY } from "../constants/device.ts";
+import { focus } from "../programs/focus/index.ts";
+import { createFakeBar } from "./bar.ts";
+import { sectionOf } from "./config.ts";
+import type { BusyBar } from "@busy-app/busy-lib";
+import type { ProgramContext } from "../program.ts";
 import type { Focus } from "../programs/focus/focus.ts";
+
+// The tooling the `focus` suites need: a block to reason about, schedules to
+// read, a context to draw with, and a way to ask what ended up on the display.
+//
+// It was written inline in the suite about what a block draws, which is where
+// it stopped fitting. That file sits at the limit on its length, and the
+// harness in it -- a temporary directory, a schedule written into it, a
+// context pointed at that -- is the same harness any other suite about this
+// program would have to write out again for itself.
 
 const DEFAULT_START = new Date("2026-01-01T09:00:00Z");
 const DEFAULT_END = new Date("2026-01-01T10:00:00Z");
@@ -11,4 +30,110 @@ const createFocus = (overrides: Partial<Focus> = {}): Focus => ({
 	...overrides,
 });
 
-export { createFocus };
+// The one block every drawing suite works from, as instants rather than as a
+// block: what goes in a schedule file is text, and what a test asserts about
+// is usually a moment inside it.
+const BLOCK_START = DEFAULT_START;
+const BLOCK_END = DEFAULT_END;
+
+type Elements = Parameters<BusyBar["DisplayDraw"]>[0]["elements"];
+type Element = Elements[number];
+type Rectangle = Extract<Element, { type: "rectangle" }>;
+
+const isText = (
+	element: Element,
+): element is Extract<Element, { type: "text" }> => element.type === "text";
+
+const isCountdown = (
+	element: Element,
+): element is Extract<Element, { type: "countdown" }> =>
+	element.type === "countdown";
+
+const isRectangle = (element: Element): element is Rectangle =>
+	element.type === "rectangle";
+
+// The name is drawn as one element per line, so what it says is the lines put
+// back together.
+const drawnName = (elements: Elements): string =>
+	elements
+		.filter(isText)
+		.map(({ text }) => text)
+		.join(" ")
+		.trim();
+
+interface Schedules {
+	// A path in the directory that nothing has written yet, for a suite that
+	// means to rewrite a schedule underneath the program.
+	readonly path: () => string;
+	// Writes one and hands back the path, without starting anything.
+	readonly write: (blocks: unknown, path?: string) => Promise<string>;
+	// Writes one and runs the program's one-time preparation against it, which
+	// is what every drawing test needs before it can draw.
+	readonly start: (blocks: unknown, path?: string) => Promise<ProgramContext>;
+	readonly forget: () => Promise<void>;
+}
+
+// Somewhere to write schedules that is not where the real one lives.
+//
+// A real temporary directory rather than a mocked `fs`, because reading the
+// file is part of what a draw does -- and never `local/`, since an invented
+// schedule sitting where the real one lives is one glance away from being
+// believed.
+const createSchedules = (): Schedules => {
+	const directory = mkdtempSync(join(tmpdir(), "busybar-focus-test-"));
+
+	// A file of its own per test, so one rewriting its schedule cannot disturb
+	// another.
+	const path = (): string =>
+		join(directory, `${String(Math.random()).slice(2)}.json`);
+
+	const write = async (
+		blocks: unknown,
+		at: string = path(),
+	): Promise<string> => {
+		await writeFile(at, JSON.stringify(blocks), "utf8");
+
+		return at;
+	};
+
+	return {
+		path,
+		write,
+		start: async (blocks, at) => {
+			const { bar } = createFakeBar();
+			const context = {
+				bar,
+				applicationName: focus.name,
+				priority: DEFAULT_DRAW_PRIORITY,
+				config: sectionOf({ file: await write(blocks, at) }),
+				log: () => {
+					// Nothing here cares what the program had to say.
+				},
+				// `focus` never asks for either: it is the program being
+				// interrupted rather than the one interrupting, and the runner
+				// is what wakes it.
+				redraw: () => undefined,
+				releaseScreen: () => undefined,
+			};
+
+			await focus.start?.(context);
+
+			return context;
+		},
+		forget: async () => {
+			await rm(directory, { recursive: true, force: true });
+		},
+	};
+};
+
+export {
+	BLOCK_END,
+	BLOCK_START,
+	createFocus,
+	createSchedules,
+	drawnName,
+	isCountdown,
+	isRectangle,
+	isText,
+};
+export type { Element, Elements, Rectangle, Schedules };
