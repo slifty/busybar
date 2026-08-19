@@ -510,6 +510,13 @@ against firmware reporting `api_semver` 25.0.0.
   element rather than stacking a second one, but a scrolling text element
   restarts its scroll from the beginning. Draw-once plus `timeout: 0` is the
   way to keep a smooth scroll.
+- **Elements in one draw paint in the order they are sent.** Verified on the
+  bar: overlapping elements in a single `DisplayDraw` composite later over
+  earlier, so the last one written is the one you see. That is what lets a
+  drawing be built in layers rather than in tiles — `focus` draws its progress
+  line as three rectangles lying on top of one another, where laid end to end
+  each would reach zero width at one end of a block or the other, and an
+  element of no width is not something the device has been asked for.
 - **An element `id` outlives the drawing that stopped using it.** Elements go
   away when they expire or are drawn over, and not before, so a drawing made of
   a variable number of elements has to send the same ids every time — with the

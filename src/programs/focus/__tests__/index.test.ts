@@ -1,7 +1,4 @@
-import { mkdtempSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
 import {
 	afterAll,
 	afterEach,
@@ -11,57 +8,33 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { DEFAULT_DRAW_PRIORITY } from "../../../constants/device.ts";
-import {
-	MS_PER_HOUR,
-	MS_PER_MINUTE,
-	MS_PER_SECOND,
-} from "../../../constants/time.ts";
+import { MS_PER_MINUTE, MS_PER_SECOND } from "../../../constants/time.ts";
 import { createFakeBar } from "../../../test/bar.ts";
-import { sectionOf } from "../../../test/config.ts";
+import {
+	BLOCK_END,
+	BLOCK_START,
+	createSchedules,
+	drawnName,
+	frameOf,
+	isCountdown,
+	isText,
+	solidsOf,
+} from "../../../test/focus.ts";
 import { colorFor } from "../focus.ts";
 import { IDLE_REFRESH_MS, focus } from "../index.ts";
-import type { BusyBar } from "@busy-app/busy-lib";
 import type { ProgramContext } from "../../../program.ts";
-
-type Elements = Parameters<BusyBar["DisplayDraw"]>[0]["elements"];
-type Element = Elements[number];
-
-const isText = (
-	element: Element,
-): element is Extract<Element, { type: "text" }> => element.type === "text";
-
-const isCountdown = (
-	element: Element,
-): element is Extract<Element, { type: "countdown" }> =>
-	element.type === "countdown";
-
-const isRectangle = (
-	element: Element,
-): element is Extract<Element, { type: "rectangle" }> =>
-	element.type === "rectangle";
-
-// The name is drawn as one element per line, so what it says is the lines put
-// back together.
-const drawnName = (elements: Elements): string =>
-	elements
-		.filter(isText)
-		.map(({ text }) => text)
-		.join(" ")
-		.trim();
+import type { Elements } from "../../../test/focus.ts";
 
 const NOW = new Date("2026-01-01T09:14:00Z");
-const BLOCK_START = new Date("2026-01-01T09:00:00Z");
-const BLOCK_END = new Date("2026-01-01T10:00:00Z");
 const NEXT_BLOCK_START = new Date("2026-01-01T11:00:00Z");
 
 const unixSeconds = (date: Date): string =>
 	String(Math.floor(date.getTime() / MS_PER_SECOND));
 
-const directory = mkdtempSync(join(tmpdir(), "busybar-program-"));
+const schedules = createSchedules();
 
 afterAll(async () => {
-	await rm(directory, { recursive: true, force: true });
+	await schedules.forget();
 });
 
 beforeEach(() => {
@@ -91,38 +64,10 @@ const SCHEDULE = [
 	},
 ];
 
-// A schedule file of its own per test, so one rewriting its schedule cannot
-// disturb another.
-const scheduleFile = (): string =>
-	join(directory, `${String(Math.random()).slice(2)}.json`);
-
-// Points the program at a schedule and runs its one-time preparation. The path
-// is worth naming when a test means to rewrite the file underneath the program.
 const start = async (
 	blocks: unknown = SCHEDULE,
-	path: string = scheduleFile(),
-): Promise<ProgramContext> => {
-	await writeFile(path, JSON.stringify(blocks), "utf8");
-
-	const { bar } = createFakeBar();
-	const context = {
-		bar,
-		applicationName: focus.name,
-		priority: DEFAULT_DRAW_PRIORITY,
-		config: sectionOf({ file: path }),
-		log: () => {
-			// Nothing here cares what the program had to say.
-		},
-		// `focus` never asks for either: it is the program being interrupted
-		// rather than the one interrupting, and the runner is what wakes it.
-		redraw: () => undefined,
-		releaseScreen: () => undefined,
-	};
-
-	await focus.start?.(context);
-
-	return context;
-};
+	path?: string,
+): Promise<ProgramContext> => await schedules.start(blocks, path);
 
 describe("the focus program", () => {
 	it("is registered under a device-safe application name", () => {
@@ -134,7 +79,7 @@ describe("the focus program", () => {
 	});
 
 	describe("while a block is running", () => {
-		it("draws a frame, the block's name, and a countdown, in one go", async () => {
+		it("draws a frame, the block's name, a countdown, and a bar, in one go", async () => {
 			const fake = createFakeBar();
 			const context = await start();
 
@@ -142,11 +87,15 @@ describe("the focus program", () => {
 
 			expect(fake.draws).toHaveLength(1);
 
-			const { elements } = fake.draws[0] ?? { elements: [] };
+			const elements: Elements = fake.draws[0]?.elements ?? [];
 
-			expect(elements.filter(isRectangle)).toHaveLength(1);
+			expect(frameOf(elements)).toBeDefined();
 			expect(elements.filter(isCountdown)).toHaveLength(1);
 			expect(elements.filter(isText).length).toBeGreaterThan(0);
+
+			// The line under the clock: what is behind you, what is ahead, and
+			// the pixel between them.
+			expect(solidsOf(elements)).toHaveLength(3);
 		});
 
 		// Element ids stay on the device until they expire or are drawn over,
@@ -219,7 +168,7 @@ describe("the focus program", () => {
 			const fake = createFakeBar();
 			const context = await start([
 				{
-					name: "TEST wraps here",
+					name: "TEST two lines",
 					start: BLOCK_START.toISOString(),
 					end: BLOCK_END.toISOString(),
 				},
@@ -232,7 +181,7 @@ describe("the focus program", () => {
 				.filter(({ text }) => text.trim() !== "");
 
 			expect(lines).toHaveLength(2);
-			expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST wraps here");
+			expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST two lines");
 		});
 
 		it("counts down to the end of the block, which the device ticks itself", async () => {
@@ -245,6 +194,11 @@ describe("the focus program", () => {
 
 			expect(countdown?.timestamp).toBe(unixSeconds(BLOCK_END));
 			expect(countdown?.direction).toBe("time_left");
+
+			// Always, so the clock is one width for the whole of every block
+			// and nothing around it has to be moved when it would otherwise
+			// have dropped them.
+			expect(countdown?.show_hours).toBe("always");
 		});
 
 		// Expiring at the block's end means a process that dies mid-block cannot
@@ -271,7 +225,7 @@ describe("the focus program", () => {
 
 			const elements = fake.draws[0]?.elements ?? [];
 
-			expect(elements.find(isRectangle)?.border_color).toBe(colorFor("rampUp"));
+			expect(frameOf(elements)?.border_color).toBe(colorFor("rampUp"));
 			expect(elements.find(isCountdown)?.color).toBe(colorFor("rampUp"));
 
 			for (const text of elements.filter(isText)) {
@@ -295,7 +249,7 @@ describe("the focus program", () => {
 
 				await focus.draw({ ...context, bar: fake.bar });
 
-				const border = (fake.draws[0]?.elements ?? []).find(isRectangle);
+				const border = frameOf(fake.draws[0]?.elements ?? []);
 
 				expect(border?.border_color).toBe(colorFor(phase));
 			},
@@ -334,43 +288,18 @@ describe("the focus program", () => {
 			).toBeGreaterThanOrEqual(end.getTime());
 		});
 
-		// The countdown drops its hours an hour from the end and gets 10px
-		// narrower, which is 10px the name can have back -- but only if the
-		// program comes back to redraw it.
-		it("asks to be drawn again when the countdown loses its hours", async () => {
-			const now = new Date("2026-01-01T09:30:00Z");
-			const end = new Date("2026-01-01T12:00:00Z");
+		// The bar wants a draw of its own every time it loses a pixel, so what
+		// this asks is that a colour change still wins when it is the sooner of
+		// the two -- half a minute out here, against a pixel two minutes off.
+		it("asks to be drawn again at the next colour change when that is sooner", async () => {
+			vi.setSystemTime(new Date("2026-01-01T09:14:30Z"));
 
-			vi.setSystemTime(now);
-
-			const fake = createFakeBar();
-			const context = await start([
-				{
-					name: "TEST",
-					start: BLOCK_START.toISOString(),
-					end: end.toISOString(),
-				},
-			]);
-
-			const result = await focus.draw({ ...context, bar: fake.bar });
-			const wakesAt = now.getTime() + (result.nextDrawInMs ?? 0);
-
-			// Just past the hour mark, rather than on it: the device runs the
-			// countdown off its own clock, and a tick of disagreement would
-			// put an hours-wide reading in a column sized without them.
-			expect(wakesAt).toBeGreaterThan(end.getTime() - MS_PER_HOUR);
-			expect(wakesAt).toBeLessThanOrEqual(
-				end.getTime() - MS_PER_HOUR + MS_PER_SECOND,
-			);
-		});
-
-		it("asks to be drawn again when the colour next changes, not sooner", async () => {
 			const fake = createFakeBar();
 			const context = await start();
 
 			const result = await focus.draw({ ...context, bar: fake.bar });
 
-			expect(result.nextDrawInMs).toBe(MS_PER_MINUTE);
+			expect(result.nextDrawInMs).toBe(30 * MS_PER_SECOND);
 		});
 	});
 
@@ -444,7 +373,7 @@ describe("the focus program", () => {
 
 	describe("when the schedule changes underneath it", () => {
 		it("draws a block added after it started", async () => {
-			const path = scheduleFile();
+			const path = schedules.path();
 			const context = await start([], path);
 			const before = createFakeBar();
 
@@ -452,7 +381,7 @@ describe("the focus program", () => {
 
 			expect(before.draws).toHaveLength(0);
 
-			await writeFile(path, JSON.stringify(SCHEDULE), "utf8");
+			await schedules.write(SCHEDULE, path);
 
 			const after = createFakeBar();
 
@@ -462,7 +391,7 @@ describe("the focus program", () => {
 		});
 
 		it("stops drawing a block removed after it started", async () => {
-			const path = scheduleFile();
+			const path = schedules.path();
 			const context = await start(SCHEDULE, path);
 			const before = createFakeBar();
 
@@ -470,7 +399,7 @@ describe("the focus program", () => {
 
 			expect(before.draws).toHaveLength(1);
 
-			await writeFile(path, JSON.stringify([]), "utf8");
+			await schedules.write([], path);
 
 			const after = createFakeBar();
 
@@ -482,7 +411,7 @@ describe("the focus program", () => {
 		// The file is someone else's to write, so it can be mid-write or wrong
 		// long after startup. That is the runner's short retry, not a crash.
 		it("fails the draw when the schedule stops being readable", async () => {
-			const path = scheduleFile();
+			const path = schedules.path();
 			const context = await start(SCHEDULE, path);
 
 			await writeFile(path, "{ not json", "utf8");

@@ -1,16 +1,17 @@
 # `focus`
 
 The `focus` program turns the bar into a view of the focus block you are
-currently in: what you are doing on the left, and how long is left of it
-counting down on the right, inside a coloured frame. Between blocks the bar
-shows nothing and the built-in clock has the screen back.
+currently in: what you are doing on the left, and how long is left of it on the
+right — counting down, and running out along a line underneath — inside a
+coloured frame. Between blocks the bar shows nothing and the built-in clock has
+the screen back.
 
 ```
-┌────────────────────────────────────┐
-│                                    │
-│      Deep Work            44:59    │
-│                                    │
-└────────────────────────────────────┘
+┌───────────────────────────────────┐
+│                         0:44:59   │
+│      Deep Work                    │
+│                         ░░▮████   │
+└───────────────────────────────────┘
 ```
 
 The colour says where you are in the block:
@@ -26,16 +27,94 @@ colour on the text would dim the one thing you are trying to read — orange
 lettering at wind-down worst of all — whereas a frame changing colour is
 visible from further away than the words are, and costs the words nothing.
 
-The clock takes the right quarter of the display, and the name gets the rest.
-That is the countdown's real width rather than a proportion picked by eye: it
-is drawn by the device in a fixed monospaced face, 17px as `MM:SS`, and 27px
-once the hours appear. A block with more than an hour left therefore gives the
-name ten pixels less, and takes them back at the hour mark.
+The clock takes 27px and the name gets the remaining 37px. That is the
+countdown's real width rather than a proportion picked by eye: the device draws
+it in a fixed monospaced face, 17px as `MM:SS` and 27px once the hours appear.
+
+The hours are asked for on every block, even when the answer is zero — so the
+clock reads `0:44:59` rather than `44:59`. Left to itself the device drops the
+hours an hour from the end, which changes the clock's width and hands the name
+ten pixels back mid-block. That would mean any block over an hour is drawn one
+way and then drawn another way an hour from its end, with the bar under it
+moving too, at an instant our clock and the device's have to agree on to the
+tick. Sizing everything for the wide clock costs the name those ten pixels
+always and makes the display one thing rather than two: nothing moves, and what
+you look at is what was tested.
 
 A block shorter than half an hour qualifies for both ends at once. Orange wins
 there, on the grounds that being told to wrap up is worth more than being told
 you have just started, so a twenty-minute block reads blue for five minutes and
 orange for fifteen.
+
+## The progress line
+
+Under the clock is a line of where you are in the block, one pixel deep and
+drawn the whole width of the clock. The whole of it is always drawn: the line
+is the block from end to end, and where you are in it is a change of brightness
+rather than a change of length.
+
+| Segment                | Drawn as                      |
+| ---------------------- | ----------------------------- |
+| The part already spent | White at 25% brightness       |
+| Now                    | One pixel of the phase colour |
+| The part still to come | White                         |
+
+So the ink is always the time you still have, the dim end is what you have
+spent, and the coloured pixel between them walks the length of the line as the
+block runs.
+
+The line and the clock say the same thing and answer different questions.
+`0:44:59` is exact and says nothing about whether that is most of the block or
+the tail of it — which is usually what you are asking when you glance up, and
+the one thing a countdown cannot answer, since it does not know when the block
+began. Two hours left of a two-hour block and two hours left of a working day
+read identically on a clock.
+
+The spent end is dim rather than dark because it is still saying something: it
+is what makes the line's left end visible, and so what the lit part is a
+proportion of. Turned right off, a block just begun and a block half over would
+both be a stretch of ink with nothing to measure it against.
+
+Now is a single pixel, and the only place on the line the phase colour appears
+— which is what makes it findable at a glance rather than something you have to
+measure the line to locate.
+
+The three are drawn as three rectangles lying on top of one another rather than
+end to end, sent in the order they are meant to be seen in: the whole line dim,
+the part still to come over the right of it, and now over the pixel where the
+two meet. Laid end to end, each would be a length that reaches zero — no time
+spent at the start of a block, none left at the end — and an element of no
+width is a thing this device has never been asked for. Overlapping, every one
+of them is a rectangle with something in it at every moment of every block.
+
+The line is exactly the clock's width and sits directly under it. Since the
+clock is one width always, so is the line, and neither of them ever moves.
+
+It sits one clear row under the digits, with everything left over falling
+between it and the display's frame — with the clock rather than centred in the
+space below it, because it belongs to the clock. It must touch neither
+neighbour. Digits resting on the line would read as underlined, which is the
+one thing it must not look like, and the frame is a solid line in the phase
+colour — the colour of the pixel marking now — so the two merging would put a
+false now at the bottom of the display. Of the two the frame is worth the extra
+distance, the digits above being broken and mostly white.
+
+The text — the name as well as the clock — is lifted a row from where even
+padding would put it, which is what makes room for all of that. It costs a
+pixel of headroom on the tallest names, at the top of the display where there
+is nothing to collide with.
+
+Within that lifted band the clock is centred on its own ink as though the line
+were not there. Centring the two together as one block would move the clock off
+the line the name is centred on, to make room for what is a second opinion
+about the same quantity — and a second opinion does not get to move the first.
+
+Twenty-seven pixels is all the resolution there is, so the lit part gives up a
+pixel at a time and the program comes back at the twenty-seven instants a pixel
+is actually due — the one part of the drawing the device cannot keep for
+itself. The last pixel stays lit until the block is genuinely over, since a
+line that went dark while the clock beside it still read `0:00:20` would be
+wrong about the only thing it is there to say.
 
 ## The schedule
 
@@ -199,9 +278,10 @@ had run out would never be looked at again. Nothing is on screen at those
 moments, so the wake-up costs a file read and no device traffic.
 
 That cap deliberately does not apply while a block is showing. A change to a
-block already on screen is picked up at its next colour change rather than
-immediately, since waking up more often to find nothing has changed is traffic
-spent on nothing.
+block already on screen is picked up at the next draw the block was having
+anyway — a colour change, or a pixel of the progress line — rather than
+immediately, since
+waking up more often to find nothing has changed is traffic spent on nothing.
 
 An exhausted schedule is treated as one that has not been filled in yet, since
 that is what it usually is. The program keeps checking rather than stopping,
@@ -220,12 +300,13 @@ Two properties of the hardware keep a block to a handful of requests:
   releases the screen on its own — even if this process is not around to do it.
   The countdown reaching zero and the drawing disappearing are the same moment.
 
-What is left is a handful of draws for a typical block: one when it starts, one
-when it turns green, one when it turns orange, and one at the hour mark if it
-is long enough to have started with the hours showing — that being when the
-clock narrows and the name can have the room back. The program asks to be woken
-at exactly those moments rather than polling to find them, because a poll would
-be a request every few seconds to redraw something that had not changed.
+What is left is around thirty draws for a typical block: one when it starts,
+one when it turns green, one when it turns orange, and one for each of the
+twenty-seven pixels the progress line gives up on its way out. The program asks to
+be woken at exactly those moments rather than polling to find them, because a
+poll would be a request every few seconds to redraw something that had not
+changed. Nothing about the layout is on that list — with the clock at a fixed
+width there is no moment at which what is on screen has to be rearranged.
 
 ## Settings
 
