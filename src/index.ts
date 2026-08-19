@@ -11,8 +11,8 @@ import { DEFAULT_CONFIG_FILE, loadConfig } from "./config/index.ts";
 import { describe } from "./errors.ts";
 import {
 	programNames,
+	programsToRun,
 	rejectUnknownNames,
-	resolvePrograms,
 } from "./programs/index.ts";
 import { runPrograms } from "./runner.ts";
 
@@ -62,7 +62,7 @@ const main = async (): Promise<void> => {
 			? invocation.programNames
 			: config.runNames;
 
-	const programs = resolvePrograms(requested);
+	const programs = programsToRun(requested, config.path);
 
 	const bar = new BusyBar({ addr: config.deviceAddress });
 

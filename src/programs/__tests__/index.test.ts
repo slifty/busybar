@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
-import {
-	DEFAULT_PROGRAM_NAME,
-	programNames,
-	rejectUnknownNames,
-	resolvePrograms,
-} from "../index.ts";
+import { programNames, programsToRun, rejectUnknownNames } from "../index.ts";
+
+// The file the run list was read from, which only the program that names it on
+// the display cares about.
+const CONFIG_FILE = "test-config.yml";
 
 const namesOf = (requested: string[]): string[] =>
-	resolvePrograms(requested).map(({ name }) => name);
+	programsToRun(requested, CONFIG_FILE).map(({ name }) => name);
 
 describe("programNames", () => {
 	it("lists every program the tool knows", () => {
-		expect(programNames()).toContain(DEFAULT_PROGRAM_NAME);
+		expect(programNames()).toContain("hello-world");
 		expect(programNames().length).toBeGreaterThan(1);
+	});
+
+	// It is what is left when nobody has chosen an operating mode, rather than
+	// one somebody would choose, so offering it as an answer would be noise.
+	it("does not offer the one that says nothing is set to run", () => {
+		expect(programNames()).not.toContain("unconfigured");
 	});
 
 	// The list is what an unknown name is answered with, so it is read by
@@ -22,7 +27,7 @@ describe("programNames", () => {
 	});
 });
 
-describe("resolvePrograms", () => {
+describe("programsToRun", () => {
 	it("resolves one name to one program", () => {
 		expect(namesOf(["focus"])).toStrictEqual(["focus"]);
 	});
@@ -34,37 +39,40 @@ describe("resolvePrograms", () => {
 		]);
 	});
 
-	// A config file with no programs in it is far more often one somebody has
-	// yet to fill in than a request for a bar that sits there doing nothing.
-	it("runs the default program when nothing was asked for", () => {
-		expect(namesOf([])).toStrictEqual([DEFAULT_PROGRAM_NAME]);
+	// A config file with no run list in it is far more often one somebody has
+	// yet to fill in than a request for a bar that sits there doing nothing, so
+	// the bar is given something to say rather than left to the device's clock.
+	it("says nothing is set to run when nothing was asked for", () => {
+		expect(namesOf([])).toStrictEqual(["unconfigured"]);
 	});
 
 	it("says which name it did not recognise, and what it would have taken", () => {
-		expect(() => resolvePrograms(["focus", "nonsense"])).toThrow(/"nonsense"/v);
-		expect(() => resolvePrograms(["focus", "nonsense"])).toThrow(
-			new RegExp(DEFAULT_PROGRAM_NAME, "v"),
-		);
+		expect(() => namesOf(["focus", "nonsense"])).toThrow(/"nonsense"/v);
+		expect(() => namesOf(["focus", "nonsense"])).toThrow(/hello-world/v);
 	});
 
 	// Starting the two a list got right and then failing on the third would
 	// leave the bar half doing what was asked for.
 	it("refuses the whole list rather than the part it understood", () => {
-		expect(() => resolvePrograms(["focus", "nonsense"])).toThrow();
+		expect(() => namesOf(["focus", "nonsense"])).toThrow();
 	});
 
 	// Inherited properties are not programs, however much `PROGRAMS.toString`
 	// looks like a lookup that works.
 	it("does not resolve something that is not a program", () => {
-		expect(() => resolvePrograms(["toString"])).toThrow(/unknown program/v);
+		expect(() => namesOf(["toString"])).toThrow(/unknown program/v);
+	});
+
+	// Nor by the name of the one that is not in the list, which is what is left
+	// when nobody has asked for anything rather than something to ask for.
+	it("does not resolve the one that says nothing is set to run", () => {
+		expect(() => namesOf(["unconfigured"])).toThrow(/unknown program/v);
 	});
 
 	// One application name drawn to and cleared by two loops, each undoing the
 	// other.
 	it("refuses to run the same program twice", () => {
-		expect(() => resolvePrograms(["focus", "focus"])).toThrow(
-			/more than once/v,
-		);
+		expect(() => namesOf(["focus", "focus"])).toThrow(/more than once/v);
 	});
 });
 
@@ -90,6 +98,6 @@ describe("rejectUnknownNames", () => {
 		}).toThrow(/"focos"/v);
 		expect(() => {
 			rejectUnknownNames(["focos"]);
-		}).toThrow(new RegExp(DEFAULT_PROGRAM_NAME, "v"));
+		}).toThrow(/hello-world/v);
 	});
 });

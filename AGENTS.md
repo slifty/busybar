@@ -131,10 +131,13 @@ programs:
   program can be configured while it is off — turning it on is one line, and
   its settings are where it left them. `run` is a YAML list of names, so it can
   repeat one where a block of keys could not.
-- **The names are resolved by `resolvePrograms`** in `src/programs/index.ts`,
+- **The names are resolved by `programsToRun`** in `src/programs/index.ts`,
   where an unknown or repeated name rejects the whole list rather than running
-  the part that parsed, and an empty list falls back to the default program
-  rather than running nothing.
+  the part that parsed, and an empty list runs `unconfigured` — which draws
+  "No programs to run" and the name of the file to edit, so a bar nobody has
+  configured does not look like a bar nobody has plugged in. It takes the
+  config path for that reason, and is the only program not in `PROGRAMS`: it
+  cannot be asked for by name.
 - **A block under `programs` is checked against the same names.**
   `rejectUnknownNames` runs over `config.configuredNames` in `src/index.ts`,
   because nothing else ever opens a block written for `focos:` and settings
@@ -230,10 +233,13 @@ src/
     ├── hello-world/
     │   ├── README.md   # What it draws and why
     │   └── index.ts    # Scrolling greeting
-    └── random-emoji/
+    ├── random-emoji/
+    │   ├── README.md   # What it draws and why
+    │   ├── emoji.ts    # The firmware's built-in emoji sprites
+    │   └── index.ts    # Picks one at random on a schedule
+    └── unconfigured/
         ├── README.md   # What it draws and why
-        ├── emoji.ts    # The firmware's built-in emoji sprites
-        └── index.ts    # Picks one at random on a schedule
+        └── index.ts    # Says that nothing has been set to run
 ```
 
 `src/calendar/` reads iCalendar and stops there. Expanding recurrence, applying
@@ -291,8 +297,8 @@ keep the shape and change the words. The same applies to verifying anything
 that writes a file: point it at a scratch path, never at the configured one.
 
 A **program** is an operating mode. The tool runs the ones the config file's
-`run` list names, or the ones named on the command line instead, defaulting to
-`hello-world` when neither says anything.
+`run` list names, or the ones named on the command line instead. When neither
+says anything it runs `unconfigured`, which puts that on the display.
 
 Core code sits at the root of `src/`; each program gets its own folder under
 `src/programs/`. A program declares a `name`, a `description`, an optional

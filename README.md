@@ -36,7 +36,7 @@ run:
 Naming programs on the command line runs those instead, for one run:
 
 ```bash
-npm run dev                       # runs what the file lists
+npm run dev                       # runs what `run` lists
 npm run dev -- hello-world
 npm run dev -- focus random-emoji
 ```
@@ -50,6 +50,20 @@ npm run dev -- focus random-emoji
 
 Each program documents itself in a `README.md` beside its code, which is where
 its settings and the reasoning behind what it draws live.
+
+With nothing to run — an empty `run` list, no list, or no config file at all —
+the bar says so and names the file to edit:
+
+```
+No programs to run.
+Edit local/config.yml
+```
+
+That is [`unconfigured`](src/programs/unconfigured/README.md), which is not in
+the table because it cannot be asked for by name: it is what is left when
+nobody has chosen an operating mode, rather than one to choose. The bar's own
+clock is what the display falls back to whenever this tool draws nothing, so
+without it a first run would look exactly like a run that never happened.
 
 An unknown name exits with the list of valid ones, and so does the same name
 asked for twice.
@@ -239,8 +253,9 @@ line you came for to be on the screen, and you open the README when you want to
 know why the value is what it is. An example file that answers the second
 question at length stops answering the first.
 
-Running with no config file at all is fine. Every setting has a default, and
-the tool says which file it did not find on the way past.
+Running with no config file at all is fine. Every setting has a default, the
+tool says which file it did not find on the way past, and the bar shows the
+message above rather than a blank screen.
 
 Two things are decided on the command line rather than in the file, because
 they cannot be in it:

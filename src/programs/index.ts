@@ -2,6 +2,7 @@ import { event } from "./event/index.ts";
 import { focus } from "./focus/index.ts";
 import { helloWorld } from "./hello-world/index.ts";
 import { randomEmoji } from "./random-emoji/index.ts";
+import { unconfigured } from "./unconfigured/index.ts";
 import type { Program } from "../program.ts";
 
 // Every operating mode the tool knows how to run, keyed by the name you write
@@ -13,8 +14,6 @@ const PROGRAMS = {
 	[helloWorld.name]: helloWorld,
 	[randomEmoji.name]: randomEmoji,
 } as const satisfies Record<string, Program>;
-
-const { name: DEFAULT_PROGRAM_NAME } = helloWorld;
 
 // The length of an empty string, and of a list with nothing in it.
 const NOTHING = 0;
@@ -57,26 +56,23 @@ const rejectUnknownNames = (names: string[]): void => {
 	}
 };
 
-// The names to run, given what was asked for.
+// What to run, given what was asked for and the file that was asked in.
 //
 // Nothing asked for is not a request for nothing: a config file with no `run`
 // list in it, or with an empty one, is far more often a file somebody has yet
 // to fill in than a deliberate request for a bar that sits there doing
-// nothing. It falls back to the default, which is also what a machine with no
-// config file at all gets.
-const requestedNames = (requested: string[]): string[] =>
-	requested.length > NOTHING ? requested : [DEFAULT_PROGRAM_NAME];
-
-// The programs a list of names asks for, or a reason it asks for nothing
-// runnable. The names come from the config file, or from the command line when
-// that named any.
+// nothing. So the bar says so, naming the file to go and edit -- which is also
+// what a machine with no config file at all gets, and is the whole of what
+// this needs the file's name for.
 //
-// Every name is checked before any of them runs. Starting the two programs a
-// list got right and then failing on the third would leave the bar half doing
-// what was asked for, which is worse than not starting: the display looks
-// deliberate either way.
-const resolvePrograms = (requested: string[]): Program[] => {
-	const names = requestedNames(requested);
+// The names it does get are checked before any of them runs. Starting the two
+// programs a list got right and then failing on the third would leave the bar
+// half doing what was asked for, which is worse than not starting: the display
+// looks deliberate either way.
+const programsToRun = (names: string[], configFile: string): Program[] => {
+	if (names.length === NOTHING) {
+		return [unconfigured(configFile)];
+	}
 
 	// The same program twice is not two programs. It would be one application
 	// name drawn to and cleared by two loops, each undoing the other, so the
@@ -97,9 +93,4 @@ const resolvePrograms = (requested: string[]): Program[] => {
 		.filter((program) => program !== undefined);
 };
 
-export {
-	DEFAULT_PROGRAM_NAME,
-	programNames,
-	rejectUnknownNames,
-	resolvePrograms,
-};
+export { programNames, programsToRun, rejectUnknownNames };
