@@ -9,7 +9,11 @@ import { BusyBar } from "@busy-app/busy-lib";
 import { parseCommandLine, usage } from "./cli.ts";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "./config/index.ts";
 import { describe } from "./errors.ts";
-import { programNames, resolvePrograms } from "./programs/index.ts";
+import {
+	programNames,
+	rejectUnknownNames,
+	resolvePrograms,
+} from "./programs/index.ts";
 import { runPrograms } from "./runner.ts";
 
 // The length of a list with nothing in it.
@@ -42,14 +46,21 @@ const main = async (): Promise<void> => {
 		log(`no ${config.path} -- every setting is at its default`);
 	}
 
-	// Naming programs on the command line replaces the list rather than adding
-	// to it: the point of `npm run dev -- focus` is to see one program on its
-	// own, which it would not be if the file's programs kept drawing over it.
-	// Their configured blocks still apply.
+	// A program is configured whether or not it runs, so the blocks are checked
+	// here rather than left to whatever opens one. Nothing opens a block
+	// written for a name that is not a program, so an unchecked `focos:` would
+	// be settings that do nothing until somebody notices the bar has never
+	// obeyed them.
+	rejectUnknownNames(config.configuredNames);
+
+	// Naming programs on the command line replaces the run list rather than
+	// adding to it: the point of `npm run dev -- focus` is to see one program
+	// on its own, which it would not be if the file's programs kept drawing
+	// over it. Their configured blocks still apply.
 	const requested =
 		invocation.programNames.length > NOTHING
 			? invocation.programNames
-			: config.programNames;
+			: config.runNames;
 
 	const programs = resolvePrograms(requested);
 

@@ -25,12 +25,12 @@ access both need credentials and are not wired up.
 ## Programs
 
 A **program** is an operating mode — one thing the device is doing. Which
-programs run is which of them are listed in the config file:
+programs run is which of them the config file's `run` list names:
 
 ```yaml
-programs:
-  focus:
-  random-emoji:
+run:
+  - focus
+  - random-emoji
 ```
 
 Naming programs on the command line runs those instead, for one run:
@@ -196,17 +196,31 @@ cp config.example.yml local/config.yml
 device:
   address: 10.0.4.20
 
+run:
+  - focus
+
 programs:
   focus:
     calendar: https://calendar.google.com/calendar/ical/…/basic.ics
     file: local/focus.json
-  random-emoji:
+  event:
+    calendars:
+      - https://calendar.google.com/calendar/ical/…/basic.ics
 ```
 
-A program runs because it is listed under `programs`, and is configured by what
-is written under it. Comment a block out to stop running it and its settings
-stay where you left them. What a given program takes is in [its own
-README](#programs).
+**`run` is what runs; `programs` is how each one is set up.** The two are
+separate so that a program can be configured while it is off: `event` above is
+written out in full and is not running, and adding it to `run` is the one line
+that starts it — with the calendars it already had. What a given program takes
+is in [its own README](#programs), and a program takes nothing it has to be
+told, so a name in `run` with no block runs on its defaults.
+
+A block written for something that is not a program — `focos:` — stops the tool
+with the list of names it would have taken. Nothing reads such a block, so
+settings under it would say plainly what the bar should do while doing nothing
+at all. The settings _inside_ a block are checked by the program that reads
+them, which is to say when it runs: a misspelling under a program that is off
+waits there until you turn it on.
 
 [`config.example.yml`](config.example.yml) is committed and is the catalogue:
 every setting, with its default, in a block per program — add to it whenever a
@@ -225,7 +239,7 @@ Two things are decided on the command line rather than in the file, because
 they cannot be in it:
 
 ```bash
-npm run dev -- focus                # run these programs, whatever the file lists
+npm run dev -- focus                # run these programs, whatever `run` says
 npm run dev -- --config other.yml   # read settings from somewhere else
 npm run dev -- --help
 ```

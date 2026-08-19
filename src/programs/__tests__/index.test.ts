@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_PROGRAM_NAME,
 	programNames,
+	rejectUnknownNames,
 	resolvePrograms,
 } from "../index.ts";
 
@@ -64,5 +65,31 @@ describe("resolvePrograms", () => {
 		expect(() => resolvePrograms(["focus", "focus"])).toThrow(
 			/more than once/v,
 		);
+	});
+});
+
+// Settings are kept for a program that is not running, so a block is no longer
+// proof that anything read it: a misspelled one has to be refused here or it
+// is never refused at all.
+describe("rejectUnknownNames", () => {
+	it("accepts the names of programs", () => {
+		expect(() => {
+			rejectUnknownNames(["focus", "event"]);
+		}).not.toThrow();
+	});
+
+	it("accepts a list with nothing in it", () => {
+		expect(() => {
+			rejectUnknownNames([]);
+		}).not.toThrow();
+	});
+
+	it("says which name it did not recognise, and what it would have taken", () => {
+		expect(() => {
+			rejectUnknownNames(["focos"]);
+		}).toThrow(/"focos"/v);
+		expect(() => {
+			rejectUnknownNames(["focos"]);
+		}).toThrow(new RegExp(DEFAULT_PROGRAM_NAME, "v"));
 	});
 });

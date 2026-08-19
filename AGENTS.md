@@ -117,6 +117,9 @@ can come from — that is the point of it, and adding one back would undo it.
 device:
   address: 10.0.4.20
 
+run:
+  - focus
+
 programs:
   focus:
     calendar: https://…/basic.ics
@@ -124,14 +127,22 @@ programs:
   random-emoji:
 ```
 
-- **The `programs` block is both the run list and the settings.** A program
-  runs because it is listed there, and what is written under it is its block.
-  The names are resolved by `resolvePrograms` in `src/programs/index.ts`, where
-  an unknown or repeated name rejects the whole list rather than running the
-  part that parsed, and an empty list falls back to the default program rather
-  than running nothing.
+- **`run` is the run list; `programs` is the settings.** They are separate so a
+  program can be configured while it is off — turning it on is one line, and
+  its settings are where it left them. `run` is a YAML list of names, so it can
+  repeat one where a block of keys could not.
+- **The names are resolved by `resolvePrograms`** in `src/programs/index.ts`,
+  where an unknown or repeated name rejects the whole list rather than running
+  the part that parsed, and an empty list falls back to the default program
+  rather than running nothing.
+- **A block under `programs` is checked against the same names.**
+  `rejectUnknownNames` runs over `config.configuredNames` in `src/index.ts`,
+  because nothing else ever opens a block written for `focos:` and settings
+  nothing reads are settings that do nothing. The settings _within_ a block are
+  still checked by `done()` when the program that owns them starts, so a
+  misspelled setting under a program that is not running waits until it is.
 - **The command line decides only what the file cannot.** Programs named there
-  run instead of the listed ones for that run (`npm run dev -- focus`), and
+  run instead of the `run` list for that run (`npm run dev -- focus`), and
   `--config <file>` reads settings from somewhere else. See `src/cli.ts`.
   Anything else worth setting is worth writing down where it can carry a
   comment.
@@ -277,9 +288,9 @@ to be realistic in shape — a length, a descender, a word too long to break —
 keep the shape and change the words. The same applies to verifying anything
 that writes a file: point it at a scratch path, never at the configured one.
 
-A **program** is an operating mode. The tool runs the ones listed under
-`programs` in the config file, or the ones named on the command line instead,
-defaulting to `hello-world` when neither says anything.
+A **program** is an operating mode. The tool runs the ones the config file's
+`run` list names, or the ones named on the command line instead, defaulting to
+`hello-world` when neither says anything.
 
 Core code sits at the root of `src/`; each program gets its own folder under
 `src/programs/`. A program declares a `name`, a `description`, an optional

@@ -35,7 +35,7 @@ describe("loadConfig", () => {
 	});
 
 	it("falls back to the address a bar ships with", async () => {
-		const config = await loadYaml("programs:\n  focus:\n");
+		const config = await loadYaml("run:\n  - focus\n");
 
 		expect(config.deviceAddress).toBe(DEFAULT_DEVICE_ADDRESS);
 	});
@@ -43,9 +43,32 @@ describe("loadConfig", () => {
 	// The order is the order they were written in, because that is the order
 	// somebody reading the file would expect them to be started in.
 	it("lists the programs to run, in the order they were written", async () => {
-		const config = await loadYaml("programs:\n  random-emoji:\n  focus:\n");
+		const config = await loadYaml("run:\n  - random-emoji\n  - focus\n");
 
-		expect(config.programNames).toStrictEqual(["random-emoji", "focus"]);
+		expect(config.runNames).toStrictEqual(["random-emoji", "focus"]);
+	});
+
+	// Which is the whole point of the two being separate: a program keeps its
+	// settings while it is not running, so turning it back on is one line.
+	it("keeps the settings of a program it was not asked to run", async () => {
+		const config = await loadYaml(
+			"run:\n  - random-emoji\nprograms:\n  focus:\n    file: local/kept.json\n",
+		);
+
+		expect(config.runNames).toStrictEqual(["random-emoji"]);
+		expect(config.forProgram("focus").string("file", "fallback")).toBe(
+			"local/kept.json",
+		);
+	});
+
+	// Nothing else knows what the file has a block for, so nothing else could
+	// refuse a block written for something that is not a program.
+	it("names every program it has settings for, run or not", async () => {
+		const config = await loadYaml(
+			"run:\n  - random-emoji\nprograms:\n  focus:\n  event:\n",
+		);
+
+		expect(config.configuredNames).toStrictEqual(["focus", "event"]);
 	});
 
 	it("hands each program its own block", async () => {
@@ -58,8 +81,8 @@ describe("loadConfig", () => {
 		);
 	});
 
-	// Naming a program on the command line without configuring it runs it on
-	// its defaults rather than failing to find its block.
+	// A program nobody has configured runs on its defaults rather than failing
+	// to find its block.
 	it("hands a program with no block an empty one", async () => {
 		const config = await loadYaml("programs:\n  focus:\n");
 
@@ -105,7 +128,8 @@ describe("loadConfig", () => {
 			const config = await loadConfig();
 
 			expect(config.deviceAddress).toBe(DEFAULT_DEVICE_ADDRESS);
-			expect(config.programNames).toStrictEqual([]);
+			expect(config.runNames).toStrictEqual([]);
+			expect(config.configuredNames).toStrictEqual([]);
 		});
 	});
 
@@ -148,6 +172,14 @@ describe("loadConfig", () => {
 		it("when a setting about the bar is not one", async () => {
 			await expect(loadYaml("device:\n  addres: 10.0.0.1\n")).rejects.toThrow(
 				/no setting called device\.addres/v,
+			);
+		});
+
+		// `run: focus` is the mistake this catches -- one name where a list of
+		// them belongs, which YAML is happy to read as text.
+		it("when the run list is not a list", async () => {
+			await expect(loadYaml("run: focus\n")).rejects.toThrow(
+				/run must be a list/v,
 			);
 		});
 

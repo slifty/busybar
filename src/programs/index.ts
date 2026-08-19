@@ -5,8 +5,8 @@ import { randomEmoji } from "./random-emoji/index.ts";
 import type { Program } from "../program.ts";
 
 // Every operating mode the tool knows how to run, keyed by the name you write
-// under `programs` in the config file. Adding a program means adding a folder
-// beside this file and one entry here.
+// in the config file. Adding a program means adding a folder beside this file
+// and one entry here.
 const PROGRAMS = {
 	[event.name]: event,
 	[focus.name]: focus,
@@ -33,13 +33,37 @@ const resolveProgram = (name: string): Program | undefined => {
 	return program;
 };
 
+// Refuses any name that is not a program, saying which ones are.
+//
+// The names come from three places and every one of them is somebody typing:
+// the `run` list, the blocks of settings beside it, and the command line. A
+// block is checked as well as a run list because a program is configured
+// whether or not it is running, so nothing would ever open `focos:` -- and
+// settings nothing reads are settings that say plainly what the bar should do
+// while doing nothing at all.
+//
+// The answer to a name nobody recognises is almost always another name, so the
+// list of them is what the complaint carries.
+const rejectUnknownNames = (names: string[]): void => {
+	const unknown = names
+		.filter((name) => resolveProgram(name) === undefined)
+		.map((name) => `"${name}"`);
+
+	if (unknown.length > NOTHING) {
+		throw new Error(
+			`unknown program ${unknown.join(", ")}. ` +
+				`The programs are: ${programNames().join(", ")}`,
+		);
+	}
+};
+
 // The names to run, given what was asked for.
 //
-// Nothing asked for is not a request for nothing: a config file with no
-// `programs` block in it, or with an empty one, is far more often a file
-// somebody has yet to fill in than a deliberate request for a bar that sits
-// there doing nothing. It falls back to the default, which is also what a
-// machine with no config file at all gets.
+// Nothing asked for is not a request for nothing: a config file with no `run`
+// list in it, or with an empty one, is far more often a file somebody has yet
+// to fill in than a deliberate request for a bar that sits there doing
+// nothing. It falls back to the default, which is also what a machine with no
+// config file at all gets.
 const requestedNames = (requested: string[]): string[] =>
 	requested.length > NOTHING ? requested : [DEFAULT_PROGRAM_NAME];
 
@@ -58,33 +82,24 @@ const resolvePrograms = (requested: string[]): Program[] => {
 	// name drawn to and cleared by two loops, each undoing the other, so the
 	// bar would flicker between them and neither would be wrong to blame.
 	//
-	// The config file cannot say it twice -- a repeated key is a YAML error,
-	// reported with the line it is on -- so what this catches is a list typed
-	// on the command line.
+	// Both lists that reach this can repeat a name: `run` is a YAML list
+	// rather than a block of keys, and the command line is whatever was typed.
 	const duplicate = names.find((name, index) => names.indexOf(name) !== index);
 
 	if (duplicate !== undefined) {
 		throw new Error(`"${duplicate}" is asked for more than once`);
 	}
 
-	const resolved = names.map((name) => ({
-		name,
-		program: resolveProgram(name),
-	}));
-	const unknown = resolved
-		.filter(({ program }) => program === undefined)
-		.map(({ name }) => `"${name}"`);
+	rejectUnknownNames(names);
 
-	if (unknown.length > NOTHING) {
-		throw new Error(
-			`unknown program ${unknown.join(", ")}. ` +
-				`The programs are: ${programNames().join(", ")}`,
-		);
-	}
-
-	return resolved
-		.map(({ program }) => program)
+	return names
+		.map((name) => resolveProgram(name))
 		.filter((program) => program !== undefined);
 };
 
-export { DEFAULT_PROGRAM_NAME, programNames, resolvePrograms };
+export {
+	DEFAULT_PROGRAM_NAME,
+	programNames,
+	rejectUnknownNames,
+	resolvePrograms,
+};

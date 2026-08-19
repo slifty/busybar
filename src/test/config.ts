@@ -16,13 +16,16 @@ const sectionOf = (values: Record<string, unknown> = {}): ConfigSection =>
 	createSection(TEST_CONFIG_FILE, TEST_SECTION_PATH, values);
 
 // A whole configuration, where what matters is which block each program gets.
+// Everything configured is taken to be running, which is what a suite about a
+// running program wants.
 const configOf = (
 	programs: Record<string, Record<string, unknown>> = {},
 ): Config => ({
 	path: TEST_CONFIG_FILE,
 	found: true,
 	deviceAddress: DEFAULT_DEVICE_ADDRESS,
-	programNames: Object.keys(programs),
+	runNames: Object.keys(programs),
+	configuredNames: Object.keys(programs),
 	forProgram: (name) =>
 		createSection(TEST_CONFIG_FILE, `programs.${name}`, programs[name]),
 });

@@ -25,8 +25,9 @@ const usage = (programNames: string[], configFile: string): string =>
 	[
 		"usage: busybar [program...] [--config <file>]",
 		"",
-		`Runs the programs listed in ${configFile}. Naming programs here runs`,
-		"those instead, on whatever the file has configured for them.",
+		`Runs the programs the \`run\` list in ${configFile} names. Naming`,
+		"programs here runs those instead, on whatever the file has configured",
+		"for them.",
 		"",
 		`  --${CONFIG_OPTION} <file>  read settings from <file> instead`,
 		`  --${HELP_OPTION}, -${HELP_SHORT}       show this`,
