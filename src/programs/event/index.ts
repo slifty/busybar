@@ -525,24 +525,47 @@ const start = async (context: ProgramContext): Promise<void> => {
 	await refresher.begin(settings, context);
 };
 
+// Whether what the calendars last said has aged past being worth drawing.
+//
+// A program that has never managed a read at all counts as stale, which is
+// belt and braces: `start` awaits the first read and fails on it, so a running
+// program has always read something. If that ever stopped being true, the
+// answer that shows the failure is the safe one.
+const isStale = (
+	readAt: Date | undefined,
+	now: Date,
+	staleMs: number,
+): boolean =>
+	readAt === undefined || now.getTime() - readAt.getTime() >= staleMs;
+
 const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	const now = new Date();
+
+	// Taken from the block again rather than held from `start`, which costs
+	// nothing: the file was read once, at startup, and this is a few keys out
+	// of what it said.
+	const settings = eventSettings(context.config);
 
 	// A calendar that could not be read belongs on the bar, not only in a log.
 	// Silence is what this program looks like when it is working, so a bar
 	// showing nothing because it has not managed to read a feed since breakfast
 	// is indistinguishable from a quiet afternoon -- which is the whole reason
 	// failures are drawn.
+	//
+	// But only once what it last read has gone stale. A failed read keeps the
+	// appointments the last good one found, and a feed that went wrong once
+	// four minutes ago has told us nothing we did not already know about
+	// today: drawing an error over a schedule that is still perfectly current
+	// would take the screen away from the meeting it was put there to warn
+	// about. The failure is logged either way, by whoever caught it.
 	const failure = refresher.failure();
 
-	if (failure !== undefined) {
+	if (
+		failure !== undefined &&
+		isStale(refresher.readAt(), now, settings.staleMs)
+	) {
 		throw failure;
 	}
-
-	// Taken from the block again rather than held from `start`, which costs
-	// nothing: the file was read once, at startup, and this is a few keys out
-	// of what it said.
-	const settings = eventSettings(context.config);
 
 	// Whatever the refresher last read. Nothing is fetched here: how fresh the
 	// calendars are is its own question, asked on its own clock.

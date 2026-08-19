@@ -439,6 +439,17 @@ const runPrograms = async (
 		runningProgram(program, environment),
 	);
 
+	// Held open from here rather than from the first draw, because preparation
+	// waits too. A calendar that answered badly is asked again after a pause,
+	// and that pause is deliberately not a reason to stay running -- so a
+	// program whose whole preparation is one backing-off feed has nothing
+	// scheduled, and a process with nothing scheduled exits. Without this it
+	// would do so silently, part-way through starting up. See `wait` in
+	// `src/calendar/source.ts`.
+	const keepAlive = setInterval(() => {
+		// Nothing to do; this only holds the event loop open.
+	}, KEEP_ALIVE_INTERVAL_MS);
+
 	// Before anything is scheduled or drawn, and all at once rather than in
 	// turn: preparation reads files and fetches calendars, and one program's
 	// slow network is not a reason to hold up another's first draw. Nothing is
@@ -460,6 +471,8 @@ const runPrograms = async (
 	// first is carried out as well so that the process exits saying something
 	// more useful than that it failed.
 	if (started.length === NONE_STARTED) {
+		clearInterval(keepAlive);
+
 		const [failure] = outcomes
 			.map(({ error }) => error)
 			.filter((error) => error !== undefined);
@@ -476,10 +489,6 @@ const runPrograms = async (
 	// resolves, so a Ctrl-C arriving during that draw would otherwise leave the
 	// tool waiting for an abort that had already happened.
 	const aborted = once(controller.signal, "abort").then(() => undefined);
-
-	const keepAlive = setInterval(() => {
-		// Nothing to do; this only holds the event loop open.
-	}, KEEP_ALIVE_INTERVAL_MS);
 
 	const stop = (): void => {
 		controller.abort();

@@ -132,25 +132,35 @@ const createCalendars = (): Calendars => {
 	};
 };
 
-// What a program did besides draw: asked to be redrawn, or said it had let the
-// screen go. Both are calls out to the runner, so a suite that wants to assert
-// on them has to be handed somewhere for them to land.
+// What a program did besides draw: asked to be redrawn, said it had let the
+// screen go, or reported something worth knowing. All three are calls out to
+// the runner, so a suite that wants to assert on them has to be handed
+// somewhere for them to land.
 interface Signals {
 	readonly redraws: () => number;
 	readonly releases: () => number;
+	readonly said: () => readonly string[];
+}
+
+// A `Signals` that a context can write into.
+interface Recorder extends Signals {
+	readonly record: (of: "redraw" | "release") => void;
+	readonly say: (message: string) => void;
 }
 
 const contextFor = (
 	fake: FakeBar,
 	calendars: string[],
 	settings: Record<string, unknown> = {},
-	signals?: Signals & { readonly record: (of: "redraw" | "release") => void },
+	signals?: Recorder,
 ): ProgramContext => ({
 	bar: fake.bar,
 	config: sectionOf({ calendars, ...settings }),
 	applicationName: event.name,
 	priority: ALERT_PRIORITY,
-	log: () => undefined,
+	log: (message) => {
+		signals?.say(message);
+	},
 	redraw: () => {
 		signals?.record("redraw");
 	},
@@ -159,16 +169,19 @@ const contextFor = (
 	},
 });
 
-// Somewhere for those calls to be counted.
-const createSignals = (): Signals & {
-	readonly record: (of: "redraw" | "release") => void;
-} => {
+// Somewhere for those calls to be counted, and the messages kept.
+const createSignals = (): Recorder => {
 	const counts = { redraw: 0, release: 0 };
+	const messages: string[] = [];
 
 	return {
 		record: (of) => {
 			counts[of] += 1;
 		},
+		say: (message) => {
+			messages.push(message);
+		},
+		said: () => messages,
 		redraws: () => counts.redraw,
 		releases: () => counts.release,
 	};
@@ -241,4 +254,4 @@ export {
 	watchingOne,
 	unixSeconds,
 };
-export type { Calendars, Element, Elements, Signals, TextElement };
+export type { Calendars, Element, Elements, Recorder, Signals, TextElement };

@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import {
 	afterAll,
 	afterEach,
@@ -25,6 +26,8 @@ import {
 } from "../../../test/event.ts";
 import { ALERT_COLOR } from "../appointment.ts";
 import { ALERT_PRIORITY, event } from "../index.ts";
+import type { ProgramContext } from "../../../program.ts";
+import type { FakeBar } from "../../../test/bar.ts";
 
 // The row the padding sits on: the frame is two pixels, so rows 14 and 15 are
 // it and row 13 is the clear one nothing may reach.
@@ -535,5 +538,76 @@ describe("when two alerts overlap", () => {
 		await event.draw(await startedContext(fake, [path]));
 
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Across Town");
+	});
+});
+
+// A feed that went wrong once, minutes after a read that worked, has told the
+// bar nothing it did not already know about today. Drawing an error over a
+// schedule that is still current would take the screen away from the meeting
+// the alert was put there for, so a failure waits until what was last read has
+// gone stale -- and is logged in the meantime.
+describe("when a calendar stops being readable", () => {
+	// A twentieth of a second, expressed in the minutes the setting takes, so
+	// that a test can watch a read fail without waiting five real minutes.
+	const BRIEFLY = { refresh: 0.001 };
+
+	// Long enough for a program on BRIEFLY to have tried again.
+	const REFRESHED_MS = 250;
+
+	const READ_AT = "2026-01-02T09:57:00Z";
+
+	// Starts a run against a feed that reads, then takes the feed away and
+	// waits for the read that fails on it.
+	const nowUnreadable = async (
+		fake: FakeBar,
+		settings: Record<string, unknown> = {},
+	): Promise<ProgramContext> => {
+		const path = await calendars.write(
+			"flaky.ics",
+			...timedEvent("flaky", "TEST Flaky", "20260102T100000Z"),
+		);
+		const context = await startedContext(fake, [path], {
+			...BRIEFLY,
+			...settings,
+		});
+
+		await calendars.remove("flaky.ics");
+		await sleep(REFRESHED_MS);
+
+		return context;
+	};
+
+	beforeEach(() => {
+		vi.setSystemTime(new Date(READ_AT));
+	});
+
+	it("carries on drawing what it last read", async () => {
+		const fake = createFakeBar();
+		const context = await nowUnreadable(fake);
+
+		await event.draw(context);
+
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Flaky");
+	});
+
+	// Silence is what this program looks like when it is working, so a bar
+	// showing nothing because it has not managed a read since yesterday is
+	// indistinguishable from a quiet afternoon.
+	it("draws the failure once what it last read has gone stale", async () => {
+		const fake = createFakeBar();
+		const context = await nowUnreadable(fake);
+
+		vi.setSystemTime(new Date("2026-01-03T09:58:00Z"));
+
+		await expect(event.draw(context)).rejects.toThrow(/could not read/v);
+	});
+
+	it("takes how long that is from the config file", async () => {
+		const fake = createFakeBar();
+		const context = await nowUnreadable(fake, { stale: 1 });
+
+		vi.setSystemTime(new Date("2026-01-02T11:00:00Z"));
+
+		await expect(event.draw(context)).rejects.toThrow(/could not read/v);
 	});
 });

@@ -329,9 +329,21 @@ seconds and reading is about the next few hours, and tying them together means a
 program with nothing to show has to be woken purely to look at a feed, while one
 drawing every ten seconds re-fetches everything every ten seconds. The refresher
 calls `redraw()` when what it read actually changed, and keeps a failure for the
-next draw to throw, so an unreadable feed still reaches the display. `focus`
+next draw to throw, so an unreadable feed still reaches the display -- but not
+before what it last read has gone stale (`stale`, 24 hours by default). A failed
+read keeps the appointments the last good one found, and drawing an error over a
+schedule that is still current would take the screen away from the meeting the
+alert was for. Below that bound the failure is logged and nothing else. `focus`
 still reads its schedule on every draw and would benefit from the same
 treatment.
+
+**A calendar fetched over HTTP is retried before it is called a failure.**
+`src/calendar/source.ts` asks again after 15 seconds, 30, a minute and two --
+five attempts spanning just under four minutes, which fits inside `event`'s
+refresh interval because the next read is scheduled only once this one has
+finished. A 5xx and a request that never arrived are retried; a 4xx is not,
+since a wrong address or a rotated key answers the same way however often it is
+asked. Both programs that read a calendar go through this, so both get it.
 
 **Programs schedule themselves.** `draw` returns a `DrawResult`, whose
 `nextDrawInMs` says how long the runner should wait before drawing again.
@@ -573,7 +585,11 @@ against firmware reporting `api_semver` 25.0.0.
   to be tolerated rather than treated as a failure.
 - **A signal handler does not keep Node alive.** Registering `SIGINT` is not
   scheduled work, so a program that draws once and waits needs a timer (or
-  similar ref'd handle) to hold the event loop open.
+  similar ref'd handle) to hold the event loop open. The runner's keep-alive
+  covers preparation as well as the run, because the waits between a calendar's
+  retries are unref'd -- a shutdown must not sit them out, and without the
+  keep-alive a startup whose only pending work is a backing-off feed would exit
+  silently part-way through.
 
 ## Laying Out the Display
 

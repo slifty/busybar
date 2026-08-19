@@ -34,12 +34,20 @@ interface Refresher {
 	readonly appointments: () => readonly Appointment[];
 	// What stopped the last read, if it failed.
 	//
-	// Handed back rather than logged and forgotten, because a feed that cannot
-	// be read has to reach the display: silence is what this program looks like
+	// Handed back as well as logged, because a feed that cannot be read has to
+	// reach the display eventually: silence is what this program looks like
 	// when it is working, so a bar quietly showing nothing because it has not
 	// managed to read a calendar since breakfast is the exact failure worth
-	// making loud.
+	// making loud. Whether this one has got to that point is `draw`'s to judge,
+	// against `readAt`.
 	readonly failure: () => Error | undefined;
+	// When the last successful read landed, or undefined if none ever has.
+	//
+	// What makes the failure above worth drawing is how old this is. A feed
+	// that went wrong once, four minutes after a read that worked, has cost
+	// nobody anything; the same failure a day later means the bar has been
+	// quiet about a schedule it no longer knows.
+	readonly readAt: () => Date | undefined;
 	// Reads once, then again on the interval until stopped. The first read is
 	// awaited, so a feed that cannot be reached at startup fails `start` rather
 	// than surfacing minutes later.
@@ -52,6 +60,7 @@ interface Refresher {
 
 const createRefresher = (): Refresher => {
 	let appointments: readonly Appointment[] = [];
+	let readAt: Date | undefined = undefined;
 	let failure: Error | undefined = undefined;
 	let timer: NodeJS.Timeout | undefined = undefined;
 
@@ -71,6 +80,7 @@ const createRefresher = (): Refresher => {
 		// update to lose.
 		// eslint-disable-next-line require-atomic-updates -- reads are serialised by the loop below
 		appointments = read;
+		readAt = new Date();
 		failure = undefined;
 
 		// Only when the day actually changed. A read that came back saying the
@@ -93,8 +103,15 @@ const createRefresher = (): Refresher => {
 				} catch (error) {
 					failure = error instanceof Error ? error : new Error(describe(error));
 
-					// The failure belongs on the bar, and only a draw puts it
-					// there.
+					// Always said out loud, because the draw may well decide
+					// not to show it: a feed that failed once behind a read
+					// that worked is deliberately invisible on the bar, and
+					// something still has to be able to tell you it happened.
+					context.log(`could not read the calendars: ${describe(error)}`);
+
+					// Whether the failure belongs on the bar is `draw`'s
+					// question -- it depends on how long it has been since a
+					// read worked -- but only a draw can ask it.
 					context.redraw();
 				}
 
@@ -109,6 +126,7 @@ const createRefresher = (): Refresher => {
 
 	return {
 		appointments: () => appointments,
+		readAt: () => readAt,
 		failure: () => failure,
 		begin: async (settings, context) => {
 			// A second run in the same process -- which is every run after the
