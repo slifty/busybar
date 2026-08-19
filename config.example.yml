@@ -96,6 +96,25 @@ programs:
   #   # year's history, so it is not free either.
   #   refresh: 5
   #
+  #   # How long the last successful read stays worth drawing, in hours.
+  #   #
+  #   # A read that fails keeps whatever the last good one found, so this is
+  #   # how long the bar carries on showing it. A feed that answered badly is
+  #   # retried for nearly four minutes before a read is called failed at all,
+  #   # and one that fails after that has usually told you nothing new about
+  #   # today -- so covering a schedule that is still current with an error
+  #   # would take the display away from the meeting it was put there for.
+  #   #
+  #   # Past this, the failure goes on the bar instead. It has to eventually:
+  #   # a bar showing nothing is what this program looks like when it is
+  #   # working, so a subscription that broke overnight would otherwise look
+  #   # exactly like a quiet day. Until then it is written to the log only.
+  #   #
+  #   # A calendar that cannot be read when the tool starts is not covered by
+  #   # this and still refuses to start, since there is nothing already in hand
+  #   # to draw in its place.
+  #   stale: 24
+  #
   #   # The noise an appointment with no physical location makes, in seconds.
   #   #
   #   # Only those: something across town is missed half an hour before it

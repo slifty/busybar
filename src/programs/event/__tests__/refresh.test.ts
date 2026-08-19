@@ -25,9 +25,11 @@ afterAll(async () => {
 	await calendars.forget();
 });
 
+const NOW = "2026-01-02T09:00:00Z";
+
 beforeEach(() => {
 	vi.useFakeTimers({ toFake: ["Date"] });
-	vi.setSystemTime(new Date("2026-01-02T09:00:00Z"));
+	vi.setSystemTime(new Date(NOW));
 });
 
 afterEach(() => {
@@ -194,6 +196,64 @@ describe("createRefresher", () => {
 
 			expect(refresher.failure()?.message).toMatch(/could not read/v);
 			expect(signals.redraws()).toBeGreaterThan(0);
+
+			refresher.stop();
+		});
+
+		// What makes that failure worth the display is how old the last good
+		// read is, which is `draw`'s judgement to make and needs this to make
+		// it with.
+		it("remembers when it last managed a read", async () => {
+			const refresher = createRefresher();
+			const fake = createFakeBar();
+			const path = await calendars.write("dated.ics");
+			const context = contextFor(fake, [path], BRIEFLY);
+
+			expect(refresher.readAt()).toBeUndefined();
+
+			await refresher.begin(eventSettings(context.config), context);
+
+			expect(refresher.readAt()).toStrictEqual(new Date(NOW));
+
+			refresher.stop();
+		});
+
+		// A failure the draw decides not to show is a failure nothing else
+		// would ever mention, so it is said out loud whether or not it is
+		// drawn.
+		it("says so whether or not the draw shows it", async () => {
+			const refresher = createRefresher();
+			const fake = createFakeBar();
+			const signals = createSignals();
+			const path = await calendars.write("spoken.ics");
+			const context = contextFor(fake, [path], BRIEFLY, signals);
+
+			await refresher.begin(eventSettings(context.config), context);
+			await calendars.remove("spoken.ics");
+			await settle();
+
+			expect(signals.said().join("\n")).toMatch(/could not read/v);
+
+			refresher.stop();
+		});
+
+		// A read that failed must not look like a read that worked, or the
+		// staleness the draw measures would never grow.
+		it("does not count a failed read as a read", async () => {
+			const refresher = createRefresher();
+			const fake = createFakeBar();
+			const path = await calendars.write("unchanged.ics");
+			const context = contextFor(fake, [path], BRIEFLY);
+
+			await refresher.begin(eventSettings(context.config), context);
+
+			const read = refresher.readAt();
+
+			vi.setSystemTime(new Date("2026-01-02T09:30:00Z"));
+			await calendars.remove("unchanged.ics");
+			await settle();
+
+			expect(refresher.readAt()).toStrictEqual(read);
 
 			refresher.stop();
 		});

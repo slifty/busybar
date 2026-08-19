@@ -4,7 +4,11 @@
 // program be told to do?" is this file rather than a search for whatever reads
 // a value somewhere in the folder.
 
-import { MS_PER_MINUTE, MS_PER_SECOND } from "../../constants/time.ts";
+import {
+	MS_PER_HOUR,
+	MS_PER_MINUTE,
+	MS_PER_SECOND,
+} from "../../constants/time.ts";
 import { LEAD_MINUTES } from "./appointment.ts";
 import type { ConfigSection } from "../../config/section.ts";
 import type { Kind } from "./appointment.ts";
@@ -12,6 +16,7 @@ import type { Kind } from "./appointment.ts";
 const CALENDARS_KEY = "calendars";
 const LEADS_KEY = "leads";
 const REFRESH_KEY = "refresh";
+const STALE_KEY = "stale";
 const SOUND_KEY = "sound";
 const SOUND_LEAD_KEY = "lead";
 const SOUND_LINGER_KEY = "linger";
@@ -37,6 +42,21 @@ const DEFAULT_REFRESH_MINUTES = 5;
 // for: five minutes of yellow is a thing you can look at and go back to what
 // you were doing, and thirty seconds is the point at which looking is no
 // longer enough.
+// How old the last calendar read may be before a failure takes the screen, in
+// hours.
+//
+// A read that fails does not throw away what the last one found, so the
+// question this answers is how long those appointments are still worth
+// drawing. "I could not read the calendar just now" and "I have not read the
+// calendar since yesterday" are different facts, and only the second is worth
+// the display: silence is what this program looks like when it is working, so
+// a feed nobody can read has to become visible eventually or a bar showing
+// nothing means both a quiet afternoon and a broken subscription.
+//
+// A day is where those two costs cross. A schedule read this morning is still
+// most of what today holds, and one read yesterday is not today's at all.
+const DEFAULT_STALE_HOURS = 24;
+
 const DEFAULT_SOUND_LEAD_SECONDS = 30;
 
 // How long an unacknowledged sound keeps going past the start, in seconds.
@@ -76,6 +96,9 @@ interface EventSettings {
 	readonly sound: SoundSettings;
 	// How often to read the calendars again, in milliseconds.
 	readonly refreshMs: number;
+	// How old the last successful read may be before a failure to read again is
+	// drawn rather than logged.
+	readonly staleMs: number;
 	// Where a setting is written, so that a message about a feed that could
 	// not be read can say which line to go and fix.
 	readonly where: (key: string) => string;
@@ -123,6 +146,7 @@ const eventSettings = (config: ConfigSection): EventSettings => ({
 	sound: soundIn(config.section(SOUND_KEY)),
 	refreshMs:
 		config.number(REFRESH_KEY, DEFAULT_REFRESH_MINUTES) * MS_PER_MINUTE,
+	staleMs: config.number(STALE_KEY, DEFAULT_STALE_HOURS) * MS_PER_HOUR,
 	where: config.where,
 });
 
@@ -131,9 +155,11 @@ export {
 	DEFAULT_REFRESH_MINUTES,
 	DEFAULT_SOUND_LEAD_SECONDS,
 	DEFAULT_SOUND_LINGER_SECONDS,
+	DEFAULT_STALE_HOURS,
 	LEADS_KEY,
 	REFRESH_KEY,
 	SOUND_KEY,
+	STALE_KEY,
 	eventSettings,
 };
 export type { EventSettings, SoundSettings };

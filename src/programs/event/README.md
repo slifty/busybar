@@ -395,10 +395,27 @@ appointment created less than `refresh` plus its lead before it begins can be
 missed entirely. Somewhere-to-be entries have half an hour of lead and absorb it
 comfortably.
 
-A read that fails is not swallowed. The reason is kept and the next draw throws
-it, so the red `ERROR` goes on the bar — which matters more here than elsewhere,
-because a bar quietly showing nothing is exactly what this program looks like
-when it is working.
+A feed that answers badly is asked again before it is given up on: four more
+attempts, waiting 15 seconds, then 30, then a minute, then two. A 5xx and a
+request that never arrived are both retried; a 4xx is not, because a wrong
+address or a rotated key will say the same thing however many times it is
+asked. Google’s iCalendar export answering `500` to a request it served a
+minute earlier is the case this exists for, and it never reaches the bar.
+
+A read that fails all of that is not swallowed. The reason is kept and logged,
+and once what was last read has gone stale the next draw throws it, so the red
+`ERROR` goes on the bar — which matters more here than elsewhere, because a bar
+quietly showing nothing is exactly what this program looks like when it is
+working.
+
+**Stale is `stale` hours since the last read that worked, 24 by default.** A
+failed read keeps the appointments the last good one found, so the question is
+how long those are still worth drawing. “I could not read the calendar just
+now” and “I have not read the calendar since yesterday” are different facts and
+only the second is worth the screen: covering a current schedule with an error
+would take the display away from the meeting the alert was put there for. A
+feed that cannot be read at _startup_ is the exception and still refuses to
+start, since there is nothing in hand to draw instead.
 
 While an alert is up, the draws are about the alert alone: when it is due to
 chime, when a sooner appointment's window opens, and when it ends.
@@ -414,6 +431,7 @@ chime, when a sooner appointment's window opens, and when it ends.
 | `sound.lead`    | `30`    | Seconds before the start that an alert with no physical location starts chiming            |
 | `sound.linger`  | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
 | `refresh`       | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |
+| `stale`         | `24`    | Hours since the last successful read before a failure to read is drawn rather than logged  |
 
 An alert is always on screen by the time it chimes, whatever the two blocks say.
 Nothing stops `leads.url` being shorter than `sound.lead`, and a bar chiming

@@ -339,14 +339,26 @@ describe("loadBlocks, from a calendar", () => {
 			await expect(load()).rejects.toThrow(/answered 404/v);
 		});
 
+		// A feed that cannot be reached is asked again before it is given up
+		// on, so the waiting between the attempts has to be run through rather
+		// than sat out. Only `setTimeout` is faked: the file reads elsewhere in
+		// this suite are real and would stall behind a fully faked clock.
 		it("when the URL cannot be reached at all", async () => {
 			configure({ calendar: "https://example.test/basic.ics" });
 			vi.stubGlobal(
 				"fetch",
 				vi.fn(async () => await Promise.reject(new Error("offline"))),
 			);
+			vi.useFakeTimers({ toFake: ["setTimeout"] });
 
-			await expect(load()).rejects.toThrow(/could not fetch/v);
+			try {
+				const failed = expect(load()).rejects.toThrow(/could not fetch/v);
+
+				await vi.runAllTimersAsync();
+				await failed;
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 	});
 
