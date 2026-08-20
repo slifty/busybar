@@ -25,18 +25,18 @@ access both need credentials and are not wired up.
 ## Programs
 
 A **program** is an operating mode — one thing the device is doing. Which
-programs run is which of them are listed in the config file:
+programs run is which of them the config file's `run` list names:
 
 ```yaml
-programs:
-  focus:
-  random-emoji:
+run:
+  - focus
+  - random-emoji
 ```
 
 Naming programs on the command line runs those instead, for one run:
 
 ```bash
-npm run dev                       # runs what the file lists
+npm run dev                       # runs what `run` lists
 npm run dev -- hello-world
 npm run dev -- focus random-emoji
 ```
@@ -50,6 +50,20 @@ npm run dev -- focus random-emoji
 
 Each program documents itself in a `README.md` beside its code, which is where
 its settings and the reasoning behind what it draws live.
+
+With nothing to run — an empty `run` list, no list, or no config file at all —
+the bar says so and names the file to edit:
+
+```
+No programs to run.
+Edit local/config.yml
+```
+
+That is [`unconfigured`](src/programs/unconfigured/README.md), which is not in
+the table because it cannot be asked for by name: it is what is left when
+nobody has chosen an operating mode, rather than one to choose. The bar's own
+clock is what the display falls back to whenever this tool draws nothing, so
+without it a first run would look exactly like a run that never happened.
 
 An unknown name exits with the list of valid ones, and so does the same name
 asked for twice.
@@ -196,20 +210,34 @@ cp config.example.yml local/config.yml
 device:
   address: 10.0.4.20
 
+run:
+  - focus
+
 programs:
   focus:
     calendar: https://calendar.google.com/calendar/ical/…/basic.ics
     file: local/focus.json
-  random-emoji:
+  event:
+    calendars:
+      - https://calendar.google.com/calendar/ical/…/basic.ics
 ```
 
-A program runs because it is listed under `programs`, and is configured by what
-is written under it. Comment a block out to stop running it and its settings
-stay where you left them. What a given program takes is in [its own
-README](#programs).
+**`run` is what runs; `programs` is how each one is set up.** The two are
+separate so that a program can be configured while it is off: `event` above is
+written out in full and is not running, and adding it to `run` is the one line
+that starts it — with the calendars it already had. What a given program takes
+is in [its own README](#programs), and a program takes nothing it has to be
+told, so a name in `run` with no block runs on its defaults.
+
+A block written for something that is not a program — `focos:` — stops the tool
+with the list of names it would have taken. Nothing reads such a block, so
+settings under it would say plainly what the bar should do while doing nothing
+at all. The settings _inside_ a block are checked by the program that reads
+them, which is to say when it runs: a misspelling under a program that is off
+waits there until you turn it on.
 
 [`config.example.yml`](config.example.yml) is committed and is the catalogue:
-every setting, with its default, in a block per program — add to it whenever a
+every setting, at its default, in a block per program — add to it whenever a
 program gains a setting, so there is one place to discover what can be set. The
 copy in `local/` is git-ignored along with everything else in there, which is
 where a secret calendar address belongs.
@@ -218,14 +246,22 @@ YAML rather than JSON because a setting is worth a sentence of explanation, and
 the sentence should live in the file you are editing rather than in a separate
 example you have to diff against. Reading it is the one dependency this adds.
 
-Running with no config file at all is fine. Every setting has a default, and
-the tool says which file it did not find on the way past.
+What each block carries is a sentence per setting and a link to the program's
+own README, and the argument for the number stays in the README. The two are
+read at different moments: you open the file to change a value and want the
+line you came for to be on the screen, and you open the README when you want to
+know why the value is what it is. An example file that answers the second
+question at length stops answering the first.
+
+Running with no config file at all is fine. Every setting has a default, the
+tool says which file it did not find on the way past, and the bar shows the
+message above rather than a blank screen.
 
 Two things are decided on the command line rather than in the file, because
 they cannot be in it:
 
 ```bash
-npm run dev -- focus                # run these programs, whatever the file lists
+npm run dev -- focus                # run these programs, whatever `run` says
 npm run dev -- --config other.yml   # read settings from somewhere else
 npm run dev -- --help
 ```

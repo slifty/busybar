@@ -395,6 +395,11 @@ appointment created less than `refresh` plus its lead before it begins can be
 missed entirely. Somewhere-to-be entries have half an hour of lead and absorb it
 comfortably.
 
+Shortening it is not free. A read is a fetch of every feed in full, and a
+Google calendar answers that with a year of history whether or not anything in
+it has changed, so the interval is what stops a program that draws nothing all
+morning from being the noisiest thing on the network.
+
 A feed that answers badly is asked again before it is given up on: four more
 attempts, waiting 15 seconds, then 30, then a minute, then two. A 5xx and a
 request that never arrived are both retried; a 4xx is not, because a wrong

@@ -22,7 +22,10 @@ import type { ConfigSection } from "./section.ts";
 // Where settings live unless `--config` says otherwise.
 const DEFAULT_CONFIG_FILE = "local/config.yml";
 
-// The top-level block holding one block per program to run.
+// The list of the programs to run.
+const RUN_KEY = "run";
+
+// The top-level block holding one block of settings per program.
 const PROGRAMS_KEY = "programs";
 
 // The block of settings about the bar itself.
@@ -41,10 +44,13 @@ interface Config {
 	readonly found: boolean;
 	readonly deviceAddress: string;
 	// The programs the file asks to run, in the order they were written.
-	readonly programNames: string[];
+	readonly runNames: string[];
+	// Every program the file has settings for, run or not. Kept so that a
+	// block written for a name that is not a program is refused: nothing reads
+	// such a block, so it would otherwise sit there configuring nothing.
+	readonly configuredNames: string[];
 	// One program's block. A program with no block reads as one with nothing
-	// set, so naming a program on the command line without configuring it runs
-	// it on its defaults.
+	// set, so running a program nobody has configured runs it on its defaults.
 	readonly forProgram: (name: string) => ConfigSection;
 }
 
@@ -110,8 +116,9 @@ const loadConfig = async (path?: string): Promise<Config> => {
 
 	device.done();
 
+	const runNames = root.strings(RUN_KEY);
 	const programs = root.section(PROGRAMS_KEY);
-	const programNames = programs.names();
+	const configuredNames = programs.names();
 
 	root.done();
 
@@ -119,7 +126,8 @@ const loadConfig = async (path?: string): Promise<Config> => {
 		path: file,
 		found: contents !== undefined,
 		deviceAddress,
-		programNames,
+		runNames,
+		configuredNames,
 		forProgram: (name) => programs.section(name),
 	};
 };
