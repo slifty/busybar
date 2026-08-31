@@ -5,7 +5,6 @@ import type { Appointment } from "../appointment.ts";
 const appointment = (name: string, start: string): Appointment => ({
 	name,
 	start: new Date(`2026-01-02T${start}:00Z`),
-	kind: "url",
 });
 
 const CALL = appointment("TEST call", "10:00");

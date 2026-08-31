@@ -19,13 +19,13 @@ import type { EventSettings } from "./settings.ts";
 
 // A fingerprint of what was read, for telling a change from a re-read.
 //
-// The bar only ever speaks about an appointment's name, start and kind, so two
-// reads that agree about all three are the same day as far as anything here is
-// concerned -- and a redraw for a feed that merely changed the ordering of its
-// entries would be a redraw nobody could see.
+// The bar only ever speaks about an appointment's name and start, so two reads
+// that agree about both are the same day as far as anything here is concerned
+// -- and a redraw for a feed that merely changed the ordering of its entries
+// would be a redraw nobody could see.
 const fingerprint = (appointments: readonly Appointment[]): string =>
 	appointments
-		.map(({ name, start, kind }) => `${start.toISOString()} ${kind} ${name}`)
+		.map(({ name, start }) => `${start.toISOString()} ${name}`)
 		.sort()
 		.join("\n");
 

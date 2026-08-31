@@ -212,7 +212,7 @@ src/
 └── programs/
     ├── index.ts        # Registry: name -> program, and what a list of names resolves to
     ├── event/
-    │   ├── README.md            # What it draws and why, its leads, its settings
+    │   ├── README.md            # What it draws and why, its lead, its settings
     │   ├── acknowledgements.ts  # Which alerts a press has already answered
     │   ├── alerts.ts            # When an alert opens, ends, and chimes; which one owns the screen
     │   ├── appointment.ts       # An appointment, its kind, and whether that kind makes a noise

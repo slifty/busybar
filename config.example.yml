@@ -33,13 +33,9 @@ programs:
     #   # personal
     #   - local/personal.ics
 
-    # The minutes of warning an appointment gets. `located` is an appointment
-    # with a place on it, `url` is one with a link, and `plain` is one with
-    # neither. The numbers are about how long it takes to get there.
-    leads:
-      located: 30
-      url: 5
-      plain: 5
+    # The minutes of warning every appointment gets, whatever the calendar
+    # says about where it is.
+    lead: 5
 
     # The minutes between reads of the calendars. This is the longest an
     # appointment added elsewhere can take to reach the bar.
@@ -49,10 +45,10 @@ programs:
     # found. After that, the bar shows the failure instead.
     stale: 24
 
-    # The chime an appointment with no place to be makes. `lead` is the seconds
-    # before the start that it begins. `linger` is the seconds it continues
-    # after the start while nobody answers it. Set `linger` to 0 to stop the
-    # chime at the start.
+    # The chime an appointment makes. `lead` is the seconds before the start
+    # that it begins. `linger` is the seconds it continues after the start
+    # while nobody answers it. Set `linger` to 0 to stop the chime at the
+    # start.
     sound:
       lead: 30
       linger: 120

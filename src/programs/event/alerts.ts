@@ -1,9 +1,8 @@
-import { sounds } from "./appointment.ts";
 import type { Appointment } from "./appointment.ts";
 import type { EventSettings } from "./settings.ts";
 
 // An appointment as the bar will actually speak about it: when it starts
-// saying so, when it stops, and whether it makes a noise while it does.
+// saying so, when it starts making a noise, and when it stops.
 //
 // The instants are worked out once, here, rather than recomputed from the
 // settings wherever they are wanted. Two things fall out of that. Everything
@@ -24,43 +23,35 @@ interface Alert {
 	readonly opensAt: Date;
 	// When it stops, whether or not anybody acknowledged it.
 	//
-	// For an alert with somewhere to be, this is the appointment's own start:
-	// getting you there on time is the entire job, and it is over once it is
-	// time. For one that makes a noise it is later, because the noise is
-	// supposed to continue until it is acknowledged and something has to end
-	// it when nothing does.
+	// Later than the appointment's own start: the noise is supposed to continue
+	// until it is acknowledged, and something has to end it when nothing does.
+	// The screen going quiet while the bar was still shouting would be the bar
+	// contradicting itself.
 	readonly endsAt: Date;
-	// When the noise starts, or undefined for an alert that stays silent.
-	readonly soundsFrom: Date | undefined;
+	// When the noise starts.
+	readonly soundsFrom: Date;
 }
 
 // The alert for one appointment, given what the file says about warnings.
 const alertFor = (
 	appointment: Appointment,
-	{ leads, sound }: EventSettings,
+	{ leadMs, sound }: EventSettings,
 ): Alert => {
 	const start = appointment.start.getTime();
-	const soundsFrom = sounds(appointment)
-		? new Date(start - sound.leadMs)
-		: undefined;
+	const soundsFrom = new Date(start - sound.leadMs);
 
-	// The alert is on screen by the time it makes a noise, whatever the leads
-	// say. Nothing stops a file setting `leads.url` shorter than `sound.lead`,
-	// and a bar chiming about an appointment it is not naming is a bar being
-	// alarming and unhelpful in the same breath.
-	const warnsFrom = new Date(start - leads[appointment.kind]);
+	// The alert is on screen by the time it makes a noise, whatever the file
+	// says. Nothing stops `lead` being set shorter than `sound.lead`, and a bar
+	// chiming about an appointment it is not naming is a bar being alarming and
+	// unhelpful in the same breath.
+	const warnsFrom = new Date(start - leadMs);
 	const opensAt =
-		soundsFrom !== undefined && soundsFrom.getTime() < warnsFrom.getTime()
-			? soundsFrom
-			: warnsFrom;
+		soundsFrom.getTime() < warnsFrom.getTime() ? soundsFrom : warnsFrom;
 
 	return {
 		appointment,
 		opensAt,
-		endsAt:
-			soundsFrom === undefined
-				? appointment.start
-				: new Date(start + sound.lingerMs),
+		endsAt: new Date(start + sound.lingerMs),
 		soundsFrom,
 	};
 };
@@ -80,19 +71,18 @@ const isShowing = ({ opensAt, endsAt }: Alert, at: Date): boolean =>
 	opensAt.getTime() <= at.getTime() && at.getTime() < endsAt.getTime();
 
 // Whether this alert should be making a noise at `at`.
-const isSounding = (alert: Alert, at: Date): boolean =>
-	alert.soundsFrom !== undefined &&
-	alert.soundsFrom.getTime() <= at.getTime() &&
-	at.getTime() < alert.endsAt.getTime();
+const isSounding = ({ soundsFrom, endsAt }: Alert, at: Date): boolean =>
+	soundsFrom.getTime() <= at.getTime() && at.getTime() < endsAt.getTime();
 
 // The alert that should be on screen at `at`, if any.
 //
-// The soonest start wins. Alerts overlap whenever a distant appointment with a
-// long lead runs into a near one with a short lead -- a two o'clock across town
-// starts warning at half past one, and a half past one call starts warning at
-// twenty-five past -- and at that moment the call is the thing you are about to
-// miss. Sorting by start rather than by how long the alert has been up is what
-// makes the more urgent of the two win, whichever spoke first.
+// The soonest start wins. Alerts overlap whenever two appointments are closer
+// together than the lead, and whenever one is still chiming past its own start
+// as the next one opens -- a two o'clock and a five past two overlap for the
+// whole of the first alert's linger, and at that moment the two o'clock is the
+// thing you are about to miss. Sorting by start rather than by how long the
+// alert has been up is what makes the more urgent of the two win, whichever
+// spoke first.
 //
 // Ties go to whichever was read first, which `sort` being stable is what
 // preserves. Two appointments starting at the same instant are a coin toss the

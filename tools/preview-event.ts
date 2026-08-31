@@ -86,43 +86,47 @@ const capture = async (): Promise<string> => {
 	return `${rows.map((row, y) => `${String(y).padStart(2)} ${row}`).join("\n")}`;
 };
 
-// Each case is a name, how many seconds until the appointment starts, and
-// whether it is somewhere to be -- which decides the lead, and therefore
-// whether it is alerting at all. A case further out than its own lead draws
-// nothing, so anything more than five minutes away has to be located.
+// Each case is a name and how many seconds until the appointment starts. What
+// is being looked at is pixels rather than policy, so the lead below is set
+// wide enough that every case draws something -- an alert that has not opened
+// yet is a blank frame, which says nothing about the layout.
 //
 // The names say what they are testing rather than impersonating a real day.
 // They still have to be the right shape -- a length, a descender or not, a word
 // too long to break -- because shape is the whole of what is being looked at.
-const CASES: Array<[string, number, boolean]> = [
+const CASES: Array<[string, number]> = [
 	// Short, and the shape a real title takes.
-	["TEST", 299, false],
-	["TEST Standup", 299, false],
-	["TEST Located 13:15", 299, false],
+	["TEST", 299],
+	["TEST Standup", 299],
+	["TEST Located 13:15", 299],
 	// A tail, and the same length without one: these should sit on the same
 	// baseline as each other, which they did not before the gap row was lent
 	// to descenders.
-	["TEST tail g", 299, false],
-	["TEST no tail", 299, false],
+	["TEST tail g", 299],
+	["TEST no tail", 299],
 	// Long enough to be cut, which should end in an ellipsis rather than
 	// silently losing the end.
-	["TEST a name far too long to hold in full at any size", 299, false],
-	["TESTing a supercalifragilisticexpialidocious word", 299, false],
-	// The digits the caption has to hold: the widest minutes it can reach,
-	// and seconds only. The first is half an hour out, so it has to be
-	// somewhere to be or it would not be alerting yet.
-	["TEST wide clock", 1799, true],
-	["TEST narrow clock", 29, false],
+	["TEST a name far too long to hold in full at any size", 299],
+	["TESTing a supercalifragilisticexpialidocious word", 299],
+	// The digits the caption has to hold: the widest minutes it can reach, and
+	// seconds only. The first is half an hour out, which only draws because of
+	// the wide lead above.
+	["TEST wide clock", 1799],
+	["TEST narrow clock", 29],
 	// Past its start and still up, which is what an unacknowledged chiming
 	// alert looks like: the device clamps the countdown at 00:00 rather than
 	// counting negative.
-	["TEST clamped clock", -30, false],
+	["TEST clamped clock", -30],
 ];
 
 const context = {
 	bar,
 	config: createSection("preview", "programs.event", {
 		calendars: [CALENDAR_FILE],
+		// Wide enough that every case above has an open window. The program's
+		// own default is five minutes; this is about seeing the layout rather
+		// than about when an alert is due.
+		lead: 30,
 	}),
 	applicationName: event.name,
 	priority: ALERT_PRIORITY,
@@ -135,7 +139,7 @@ const context = {
 };
 
 try {
-	for (const [name, secondsAway, located] of CASES) {
+	for (const [name, secondsAway] of CASES) {
 		const start = new Date(Date.now() + secondsAway * MS_PER_SECOND);
 
 		await writeFile(
@@ -148,7 +152,6 @@ try {
 				"UID:preview@busybar.invalid",
 				`DTSTAMP:${stamp(new Date())}`,
 				`DTSTART:${stamp(start)}`,
-				...(located ? ["LOCATION:TEST Room 4"] : []),
 				`SUMMARY:${name}`,
 				"END:VEVENT",
 				"END:VCALENDAR",

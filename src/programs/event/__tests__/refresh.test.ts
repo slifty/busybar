@@ -50,12 +50,11 @@ const settle = async (): Promise<void> => {
 const appointment = (name: string, start: string): Appointment => ({
 	name,
 	start: new Date(start),
-	kind: "plain",
 });
 
 describe("fingerprint", () => {
-	// The bar only ever speaks about a name, a start and a kind, so a read that
-	// agrees about all three is the same day however it arrived.
+	// The bar only ever speaks about a name and a start, so a read that agrees
+	// about both is the same day however it arrived.
 	it("is the same for the same appointments in a different order", () => {
 		const one = appointment("TEST one", "2026-01-02T10:00:00Z");
 		const two = appointment("TEST two", "2026-01-02T11:00:00Z");

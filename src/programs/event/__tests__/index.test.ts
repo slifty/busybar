@@ -318,32 +318,16 @@ describe("drawing an alert", () => {
 });
 
 describe("the lead an appointment gets", () => {
-	// Somewhere to physically be, twenty minutes out: already alerting, since
-	// travel gets thirty.
-	it("is alerting half an hour ahead of somewhere to be", async () => {
+	// Twenty minutes out and silent, whatever the calendar says about where it
+	// is: a room and a link both get five minutes.
+	it.each([
+		["somewhere to be", "LOCATION:TEST Room 4"],
+		["a link", "URL:https://example.test/call"],
+	])("is silent twenty minutes ahead of %s", async (_label, property) => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
-			"located.ics",
-			...timedEvent("located", "TEST Located", "20260102T100000Z", [
-				"LOCATION:TEST Room 4",
-			]),
-		);
-
-		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
-
-		await event.draw(await startedContext(fake, [path]));
-
-		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Located");
-	});
-
-	// The same twenty minutes out, for a call: silent, since a link gets five.
-	it("is silent twenty minutes ahead of a call", async () => {
-		const fake = createFakeBar();
-		const path = await calendars.write(
-			"call-lead.ics",
-			...timedEvent("call-lead", "TEST Call", "20260102T100000Z", [
-				"URL:https://example.test/call",
-			]),
+			"lead.ics",
+			...timedEvent("lead", "TEST Lead", "20260102T100000Z", [property]),
 		);
 
 		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
@@ -353,8 +337,24 @@ describe("the lead an appointment gets", () => {
 		expect(fake.draws).toStrictEqual([]);
 	});
 
-	// The numbers are an argument about how far away somebody's meetings are,
-	// and the file is where an argument like that gets settled.
+	it("is alerting five minutes ahead of anything", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write(
+			"located.ics",
+			...timedEvent("located", "TEST Located", "20260102T100000Z", [
+				"LOCATION:TEST Room 4",
+			]),
+		);
+
+		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
+
+		await event.draw(await startedContext(fake, [path]));
+
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Located");
+	});
+
+	// How far away somebody's meetings are is a fact about their day, and the
+	// file is where a fact like that gets stated.
 	it("takes the lead from the file when the file says one", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
@@ -364,11 +364,9 @@ describe("the lead an appointment gets", () => {
 			]),
 		);
 
-		vi.setSystemTime(new Date("2026-01-02T09:40:00Z"));
+		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
 
-		await event.draw(
-			await startedContext(fake, [path], { leads: { located: 1 } }),
-		);
+		await event.draw(await startedContext(fake, [path], { lead: 1 }));
 
 		expect(fake.draws).toStrictEqual([]);
 	});
@@ -476,68 +474,68 @@ describe("several calendars", () => {
 });
 
 describe("when two alerts overlap", () => {
-	// A place across town starts warning at half past; a call at a quarter to
-	// starts warning at twenty to. At twenty to, the call is the thing about to
-	// be missed.
+	// Back-to-back meetings, which is what an overlap looks like now that every
+	// appointment gets the same five minutes: the two windows are
+	// [09:53, 10:00] and [09:55, 10:02], and they share the five minutes
+	// between 09:55 and 10:00. At 09:56 the 09:58 is the thing about to be
+	// missed.
+	//
+	// Listed later-first, so that reading them in order would pick the wrong
+	// one.
 	const OVERLAPPING = [
-		...timedEvent("across-town", "TEST Across Town", "20260102T100000Z", [
-			"LOCATION:TEST Room 4",
-		]),
-		...timedEvent("call", "TEST Call", "20260102T094500Z", [
-			"URL:https://example.test/call",
-		]),
+		...timedEvent("later", "TEST Later", "20260102T100000Z", []),
+		...timedEvent("sooner", "TEST Sooner", "20260102T095800Z", []),
 	];
 
 	it("gives the screen to whichever starts soonest", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write("overlap.ics", ...OVERLAPPING);
 
-		vi.setSystemTime(new Date("2026-01-02T09:41:00Z"));
+		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
 
 		await event.draw(await startedContext(fake, [path]));
 
-		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Call");
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Sooner");
 	});
 
-	// Which is what stops it sleeping through the sooner alert while the longer
-	// one is up.
-	it("wakes when the sooner alert opens, not when the current one ends", async () => {
+	// Which is what stops it sleeping through the next alert while one is
+	// already up.
+	it("wakes when the next alert opens, not when the current one ends", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write("wake.ics", ...OVERLAPPING);
 
-		vi.setSystemTime(new Date("2026-01-02T09:35:00Z"));
+		vi.setSystemTime(new Date("2026-01-02T09:54:00Z"));
 
 		const { nextDrawInMs } = await event.draw(
 			await startedContext(fake, [path]),
 		);
 
-		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Across Town");
-		expect(nextDrawInMs).toBe(5 * MS_PER_MINUTE);
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Sooner");
+		expect(nextDrawInMs).toBe(MS_PER_MINUTE);
 	});
 
-	// And takes it back once the sooner one is done -- which, for an alert that
-	// makes a noise, is after the noise has timed out rather than at the start.
-	// A chiming alert keeps the screen for as long as it is chiming.
+	// The noise outlasts the start, so the sooner alert keeps the screen past
+	// its own start rather than handing it over the instant it begins.
 	it("keeps the sooner alert up while it is still sounding", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write("still-sounding.ics", ...OVERLAPPING);
 
-		vi.setSystemTime(new Date("2026-01-02T09:46:00Z"));
+		vi.setSystemTime(new Date("2026-01-02T09:59:00Z"));
 
 		await event.draw(await startedContext(fake, [path]));
 
-		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Call");
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Sooner");
 	});
 
-	it("returns to the longer alert once the sooner one is done", async () => {
+	it("moves to the later alert once the sooner one is done", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write("return.ics", ...OVERLAPPING);
 
-		vi.setSystemTime(new Date("2026-01-02T09:48:00Z"));
+		vi.setSystemTime(new Date("2026-01-02T10:01:00Z"));
 
 		await event.draw(await startedContext(fake, [path]));
 
-		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Across Town");
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Later");
 	});
 });
 
