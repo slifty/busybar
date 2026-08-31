@@ -97,48 +97,44 @@ the same code.
 
 ## How much warning
 
-How you get somewhere is what decides how much warning it is worth, and the
-numbers are about travel rather than importance:
+**Five minutes, for everything.** `lead` in the config file moves it, in
+minutes, because how far away your meetings are is a fact about your day rather
+than about this tool.
 
-| The calendar says   | Default warning | Why                                           |
-| ------------------- | --------------- | --------------------------------------------- |
-| A physical location | 30 minutes      | Long enough to get there                      |
-| A URL               | 5 minutes       | Long enough to finish a sentence and click it |
-| Neither             | 5 minutes       | Treated as a link — see below                 |
+It used to be three numbers rather than one. The program read `LOCATION` and
+`URL`, guessed whether the thing was somewhere you had to travel to, and gave a
+room half an hour against a link's five minutes — on the argument that travel is
+the binding constraint and the cost of guessing wrong is asymmetric. The
+argument was sound. The guess was not.
 
-Those are defaults rather than the rule. `leads` in the config file sets each of
-the three, in minutes, because how far away your meetings are is a fact about
-your day rather than about this tool — somebody whose appointments are all in
-the next room wants a minute, and somebody with a commute to one wants half an
-hour. The reasoning above is what the numbers mean, not an argument you have to
-accept.
+Measured against a real Google calendar of 7,291 entries, 86 of them carry a
+`LOCATION` that reads as a place while also carrying a conference link. Most of
+those are genuinely rooms that are also dialled into, which the guess got right.
+A meaningful minority are not. The shapes that turn up are a location naming
+the software rather than a place (`Google Meet link below`, a bare `skype`), a
+location that is a sentence about the call (`On meet now`, or a note that
+somebody will ring you), and a location naming two pieces of software at once.
+Each of those is a call taken sitting down, and each was given half an hour of
+warning it had no use for —
+and, worse, no chime at all, because the same guess decided both. The failure
+the chime exists to catch is the one you are sitting still through, and that is
+exactly the case the guess was silently removing it from.
 
-A link is read from `URL`, `CONFERENCE`, or `X-GOOGLE-CONFERENCE`, whichever is
-set first. The last of those is what Google Calendar actually writes for a Meet
-link and is the one that turns up most.
+So the guess is gone rather than tuned. Every heuristic of that shape has the
+same problem: what a person types into `LOCATION` is prose, and the field means
+whatever they meant that day.
 
-Two judgements are worth stating because a calendar will exercise both daily:
+Five minutes is what a link used to get, and a link is what most entries in a
+calendar turn out to be. It is long enough to finish a sentence and click
+something, and deliberately not long enough to cross town. **An appointment that
+needs more warning than that has to say so itself** — which is what reading
+`VALARM` triggers off the calendar is for, and is not built yet. Until it is, an
+airport run and a desk call get the same five minutes, and the airport run is
+the one that suffers for it.
 
-- **A location that is itself a link is not a place.** Calendars routinely put
-  a video call URL in the `LOCATION` field, and reading that as somewhere to
-  travel to would give every call taken at your desk half an hour of warning.
-  Any URI scheme counts, not only `http` — `zoommtg:`, `msteams:` and `tel:`
-  are all things you join from wherever you are sitting. A one-character
-  scheme is the exception and stays a place, because the only thing that
-  produces one is a path like `C:\rooms\4`. Where the two readings are close,
-  this errs towards a place: warning too early costs you twenty-five minutes
-  of knowing, and warning too late costs you the meeting.
-- **A room wins over a link when an entry has both**, which is ordinary for a
-  meeting that is in a room and also dialled into. Travel is the binding
-  constraint: warned thirty minutes out you can still take the call from your
-  desk, whereas warned five minutes out you cannot be in the room. The cost of
-  guessing wrong is asymmetric, so the guess goes the cheaper way.
-
-An entry with nothing written either way is treated as a link rather than as a
-place. Something with nowhere on it is far more often at your desk than across
-town, and while being warned five minutes out for a journey is the worse
-failure, guessing "place" would inflict it on every unlabelled entry in the
-calendar.
+That trade is worth stating plainly rather than burying: this change makes the
+common case right and the uncommon case worse, on the bet that the uncommon case
+is about to get a better answer than a guess.
 
 ## Interrupting
 
@@ -157,16 +153,18 @@ bar letting you miss it.
 
 ## The sound
 
-Thirty seconds before the start, an appointment **with no physical location**
-starts chiming: the firmware's own `calendar_event_starts.snd`, replayed every
-ten seconds until it is acknowledged.
+Thirty seconds before the start, **every** appointment starts chiming: the
+firmware's own `calendar_event_starts.snd`, replayed every ten seconds until it
+is acknowledged.
 
-Only those. Something across town is missed half an hour before it starts, and
-no chime thirty seconds out was ever going to save it — whereas a call you are
-meant to be on is missed by exactly the thirty seconds you spent not noticing,
-which is the failure this is for. So the sound is for `url` and `plain` entries
-and never for `located` ones, which is the same split as "did the calendar name
-a place".
+Every one, and it used not to be. The chime was for entries the calendar gave no
+place, on the argument that something across town is missed half an hour out
+rather than thirty seconds out, whereas a call you are meant to be on is missed
+by exactly the thirty seconds you spent not noticing. That argument still holds
+for the two cases as described. What it depended on was knowing which case you
+were in, and that came from the same guess about `LOCATION` that decided the
+lead — so a desk call misread as a room lost its chime, which is the one failure
+the chime exists for. Silencing an alert is not a thing to do on a guess.
 
 Four and a half of the five minutes are silent. Looking at a yellow frame is
 enough until it is not, and a bar that chimed for the whole lead would be a bar
@@ -185,25 +183,23 @@ the alert's end as its `display_until`, so the device takes it down itself, on
 time, and the built-in clock comes back on its own. A process that dies
 mid-alert cannot leave one stranded on the display.
 
-When the alert ends depends on whether it makes a noise:
+**Two minutes after the start, unless acknowledged.** An alert has to outlast
+its start, because it is supposed to continue until somebody says they have seen
+it, and the screen going quiet while the bar is still shouting would be the bar
+contradicting itself.
 
-| Alert                | Ends                                             |
-| -------------------- | ------------------------------------------------ |
-| Somewhere to be      | At the appointment's start                       |
-| Anything that chimes | Two minutes after the start, unless acknowledged |
-
-A silent alert's whole job is getting you there on time, which is over once it
-is time — so the countdown reaching zero and the alert disappearing are the same
-instant. One that chimes has to outlast the start, because it is supposed to
-continue until somebody says they have seen it, and the screen going quiet while
-the bar is still shouting would be the bar contradicting itself.
+There used to be a second row here: an alert with somewhere to be ended at the
+appointment's start, on the reasoning that getting you there on time is over
+once it is time. That was right about what such an alert is for and wrong about
+being able to tell which alerts those were, so it went with the guess that fed
+it.
 
 Past the start the clock is replaced by the word **`NOW`**. The device clamps the
 digits at `00:00` rather than counting negative, which is right as far as it
 goes — but a clock reading zero looks like a timer that has _finished_, which is
 the wrong impression for the one moment the bar is trying to say you are late. A
-word says it without arithmetic, and only an alert that outlasts its start ever
-shows it: one with somewhere to be has already gone.
+word says it without arithmetic, and every alert outlasts its start, so every
+alert can reach it.
 
 **The frame blinks while this lasts**, half a second lit and half a second dark.
 The frame rather than the whole alert, and rather than the word: a name and a
@@ -237,8 +233,8 @@ acknowledges nothing.** Without a limit, one appointment nobody was there for
 leaves the bar chiming until somebody comes back to the desk, which is a worse
 thing to walk in on than a missed meeting. Two minutes is long enough to reach
 the bar from the next room and short enough that a bar left alone falls quiet
-before anybody minds. `sound.linger` moves it, and `0` makes a chiming alert end
-at the start like a silent one.
+before anybody minds. `sound.linger` moves it, and `0` makes an alert end at the
+appointment's start rather than after it.
 
 ## Acknowledging it
 
@@ -316,15 +312,20 @@ the moment the interruption clears.
 Overlapping alerts are ordinary rather than a conflict, and this is where
 `event` differs sharply from `focus`. Two focus blocks cannot both be what you
 are doing, so `focus` discards one of any overlapping pair outright. Two
-appointments can perfectly well both be coming up and neither is wrong — a two
-o'clock across town starts warning at half past one, and a half past one call
-starts warning at twenty-five past.
+appointments can perfectly well both be coming up and neither is wrong — back to
+back meetings at 09:58 and 10:00 have windows of `[09:53, 10:00]` and
+`[09:55, 10:02]`, and they share the five minutes in between.
 
 What has to be decided is only which of them owns 72×16 pixels, and the answer
-is **whichever starts soonest**. At twenty-five past, the call is the thing you
-are about to miss. Sorting by start rather than by which alert spoke first is
-what lets the more urgent one take the screen from the longer one, and hand it
-back once it has begun. Exact ties go to whichever was read first.
+is **whichever starts soonest**. At 09:56 the 09:58 is the thing you are about
+to miss. Exact ties go to whichever was read first.
+
+With one lead for everything, alerts open in the order their appointments start,
+so this is no longer a short alert cutting in front of a long one — that was the
+shape when a room got half an hour and a link got five. What it decides now is
+which of two open windows is nearer, and the handover at the end: the sooner
+alert keeps the screen past its own start, because the chime outlasts the start,
+and gives it up when its linger runs out rather than when the meeting begins.
 
 ## The calendars
 
@@ -390,10 +391,14 @@ drawn.
 So the program now asks for no draws at all on a day with nothing left in it,
 and the refresher wakes it if that stops being true. **`refresh` is the longest a
 meeting entered on your phone can take to reach the bar** — and since an alert
-with no physical location only opens five minutes before the start, an
-appointment created less than `refresh` plus its lead before it begins can be
-missed entirely. Somewhere-to-be entries have half an hour of lead and absorb it
-comfortably.
+opens five minutes before the start, an appointment created less than `refresh`
+plus `lead` before it begins can be missed entirely. On the defaults that is ten
+minutes.
+
+That window got wider when the lead became one number. An entry with somewhere
+to be used to carry half an hour of lead and absorb a slow refresh comfortably;
+nothing absorbs it now, so `refresh` is doing more work than it was. Shortening
+it is the lever, and the paragraph below is why that is not free.
 
 Shortening it is not free. A read is a fetch of every feed in full, and a
 Google calendar answers that with a year of history whether or not anything in
@@ -427,21 +432,18 @@ chime, when a sooner appointment's window opens, and when it ends.
 
 ## Settings
 
-| Setting         | Default | What it does                                                                               |
-| --------------- | ------- | ------------------------------------------------------------------------------------------ |
-| `calendars`     | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
-| `leads.located` | `30`    | Minutes of warning for an appointment with somewhere physical to be                        |
-| `leads.url`     | `5`     | Minutes of warning for one with a link                                                     |
-| `leads.plain`   | `5`     | Minutes of warning for one that says neither                                               |
-| `sound.lead`    | `30`    | Seconds before the start that an alert with no physical location starts chiming            |
-| `sound.linger`  | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
-| `refresh`       | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |
-| `stale`         | `24`    | Hours since the last successful read before a failure to read is drawn rather than logged  |
+| Setting        | Default | What it does                                                                               |
+| -------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `calendars`    | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
+| `lead`         | `5`     | Minutes of warning every appointment gets, whatever the calendar says about where it is    |
+| `sound.lead`   | `30`    | Seconds before the start that an alert starts chiming                                      |
+| `sound.linger` | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
+| `refresh`      | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |
+| `stale`        | `24`    | Hours since the last successful read before a failure to read is drawn rather than logged  |
 
 An alert is always on screen by the time it chimes, whatever the two blocks say.
-Nothing stops `leads.url` being shorter than `sound.lead`, and a bar chiming
-about an appointment it is not naming is alarming and useless in the same
-breath.
+Nothing stops `lead` being shorter than `sound.lead`, and a bar chiming about an
+appointment it is not naming is alarming and useless in the same breath.
 
 ---
 

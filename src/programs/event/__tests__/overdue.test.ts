@@ -126,9 +126,8 @@ describe("once the appointment has begun", () => {
 		expect(nextDrawInMs).toBe(5 * MS_PER_SECOND);
 	});
 
-	// An alert with somewhere to be ends at the start, so it is gone rather
-	// than saying anything.
-	it("never says it for an appointment with somewhere to be", async () => {
+	// Every alert outlasts its start, so a place says NOW like anything else.
+	it("says it for an appointment with somewhere to be", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
 			"located-now.ics",
@@ -141,7 +140,7 @@ describe("once the appointment has begun", () => {
 		vi.setSystemTime(at("10:00:30"));
 		await event.draw(context);
 
-		expect(fake.draws).toStrictEqual([]);
+		expect(caption(fake)).toBe("NOW");
 	});
 });
 

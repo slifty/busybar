@@ -218,9 +218,7 @@ const COUNTDOWN_Y = CAPTION_INK_TOP - COUNTDOWN_METRICS.inkTop;
 // clock reading 00:00 is a thing you have to interpret -- it looks like a timer
 // that has finished, which is exactly the wrong impression for the one moment
 // the bar is trying to say you are late. A word says it without arithmetic.
-//
-// Only an alert that outlasts its start ever shows this. One with somewhere to
-// be ends at the start, so it is gone rather than saying anything.
+
 //
 // `small` because the caption band is the five rows the digits occupied and
 // `small` is five rows of capitals -- it takes exactly the space the clock gave
@@ -340,7 +338,7 @@ const drawAlert = async (
 	const { appointment, endsAt, soundsFrom } = alert;
 	const remainingMs = appointment.start.getTime() - now.getTime();
 
-	// Past the start and still up, which only a chiming alert ever is.
+	// Past the start and still up, which lasts as long as `sound.linger`.
 	const begun = remainingMs <= NO_TIME_LEFT;
 
 	// Worked out from the clock rather than toggled, so that the frame is in
@@ -351,11 +349,9 @@ const drawAlert = async (
 
 	// Handing the device the end as an expiry means it takes the alert down
 	// itself, on time, even if this process is not around to do it -- and the
-	// built-in clock comes back on its own. For a silent alert that is the
-	// appointment's own start, so the countdown reaching zero and the alert
-	// disappearing are the same instant. For one that makes a noise it is
-	// later, because the noise is meant to outlast the start and the screen
-	// should not go quiet while the bar is still shouting.
+	// built-in clock comes back on its own. That end is later than the
+	// appointment's own start, because the noise is meant to outlast the start
+	// and the screen should not go quiet while the bar is still shouting.
 	const displayUntil = unixSeconds(endsAt);
 
 	const { font, lines: fitted } = fitText(appointment.name, NAME_REGION);

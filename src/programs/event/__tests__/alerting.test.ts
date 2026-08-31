@@ -163,23 +163,22 @@ describe("the sound", () => {
 		expect(fake.draws).toStrictEqual([]);
 	});
 
-	// Somewhere to be is missed half an hour before it starts, and no chime
-	// thirty seconds out was ever going to save it.
-	it("never chimes for an appointment with somewhere to be", async () => {
+	// The chime is for every appointment, including one the calendar gave a
+	// place: silencing an alert is not a thing to do on a guess about where it
+	// is.
+	it("chimes for an appointment with somewhere to be", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
-			"quiet-place.ics",
-			...timedEvent("quiet-place", "TEST Quiet Place", START, [
-				"LOCATION:TEST Room 4",
-			]),
+			"place.ics",
+			...timedEvent("place", "TEST Place", START, ["LOCATION:TEST Room 4"]),
 		);
 		const context = await startedContext(fake, [path]);
 
 		vi.setSystemTime(at("09:59:45"));
 		await event.draw(context);
 
-		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Quiet Place");
-		expect(fake.plays).toStrictEqual([]);
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Place");
+		expect(fake.plays).not.toStrictEqual([]);
 	});
 });
 
@@ -481,20 +480,19 @@ describe("acknowledging with the button", () => {
 		expect(drawnName(fake.draws.at(-1)?.elements ?? [])).toBe("TEST Second");
 	});
 
-	// A silent alert is the same interruption as a noisy one, and a bar that
-	// only takes an answer while it is making a noise is a bar with a rule
-	// nobody was told.
-	it("dismisses a silent alert too", async () => {
+	// An alert that is only being looked at is the same interruption as one
+	// making a noise, and a bar that only takes an answer while it is chiming
+	// is a bar with a rule nobody was told. Four and a half of the five
+	// minutes are silent, so this is most of the alert's life.
+	it("dismisses an alert that is not chiming yet", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
-			"silent-ack.ics",
-			...timedEvent("silent-ack", "TEST Silent Ack", START, [
-				"LOCATION:TEST Room 4",
-			]),
+			"quiet-ack.ics",
+			...timedEvent("quiet-ack", "TEST Quiet Ack", START, []),
 		);
 		const context = await startedContext(fake, [path]);
 
-		vi.setSystemTime(at("09:40:00"));
+		vi.setSystemTime(at("09:56:00"));
 		await event.draw(context);
 
 		const result = await event.onButton?.(ANY_BUTTON, context);
