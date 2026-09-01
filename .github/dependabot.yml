@@ -15,6 +15,9 @@ updates:
       # eslint-config-love pins its eslint peer to ^9, so eslint 10 has to wait.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # eslint-config-love 155 drops eslint-plugin-import, which our rules use.
+      - dependency-name: "eslint-config-love"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "@eslint/*"
         update-types: ["version-update:semver-major"]
       # typescript-eslint does not support TypeScript 7 yet.
