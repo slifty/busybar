@@ -227,6 +227,30 @@ describe("positiveNumber", () => {
 	});
 });
 
+describe("boolean", () => {
+	it("reads a yes and a no", () => {
+		expect(sectionOf({ chiming: true }).boolean("chiming", false)).toBe(true);
+		expect(sectionOf({ chiming: false }).boolean("chiming", true)).toBe(false);
+	});
+
+	it("falls back when the setting is absent", () => {
+		expect(sectionOf({}).boolean("chiming", true)).toBe(true);
+	});
+
+	// A key with nothing after it is a line somebody meant to come back to.
+	it("falls back when the setting was written blank", () => {
+		expect(sectionOf({ chiming: null }).boolean("chiming", true)).toBe(true);
+	});
+
+	// Reading quoted text as a no would turn a typo into a setting doing the
+	// opposite of what the file plainly says.
+	it("refuses text, however much it looks like a yes", () => {
+		expect(() =>
+			sectionOf({ chiming: "true" }).boolean("chiming", false),
+		).toThrow("test-config.yml: programs.focus.chiming must be true or false");
+	});
+});
+
 describe("section", () => {
 	it("reads a block nested inside another", () => {
 		const root = rootOf({ device: { address: "10.0.0.1" } });

@@ -70,16 +70,25 @@ const alertFor = (
 	};
 };
 
+// An appointment carrying no alarm of its own has named no instant to be
+// interrupted at. Most of a real calendar is like that, so `ensure_alarms`
+// decides whether every appointment is given one -- its own start, which is the
+// least a bar can say about a meeting and the thing it is most often for.
+const NOTHING_ASKED_FOR = 0;
+
+const triggersOf = (
+	{ alarms, start }: Appointment,
+	ensureAlarms: boolean,
+): readonly Date[] =>
+	alarms.length === NOTHING_ASKED_FOR && ensureAlarms ? [start] : alarms;
+
 // Every alert every appointment asks for.
-//
-// An appointment whose calendar carries no alarm asks for nothing and gets
-// nothing: there is no instant it has named to be interrupted at.
 const alertsFor = (
 	appointments: readonly Appointment[],
 	settings: EventSettings,
 ): Alert[] =>
 	appointments.flatMap((appointment) =>
-		appointment.alarms.map((trigger) =>
+		triggersOf(appointment, settings.ensureAlarms).map((trigger) =>
 			alertFor(appointment, trigger, settings),
 		),
 	);

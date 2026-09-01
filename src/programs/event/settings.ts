@@ -16,6 +16,7 @@ const REFRESH_KEY = "refresh";
 const STALE_KEY = "stale";
 const SCREEN_KEY = "screen";
 const CHIME_KEY = "chime";
+const ENSURE_ALARMS_KEY = "ensure_alarms";
 const BEFORE_KEY = "before";
 const UNTIL_KEY = "until";
 const EVERY_KEY = "every";
@@ -93,6 +94,20 @@ const DEFAULT_CHIME_UNTIL_SECONDS = 120;
 // which costs a draw, is not asking for one every couple of seconds.
 const DEFAULT_CHIME_EVERY_SECONDS = 10;
 
+// Whether an appointment whose calendar names no instant gets one at its own
+// start.
+//
+// On, because most entries in a real calendar carry no alarm at all -- a
+// measurement of one gave 91% of 7,291 entries -- and a bar that said nothing
+// about nine meetings in ten would be a bar that looked broken. What it says
+// about them is the least it can: you are about to be late for this.
+//
+// It is a setting rather than a rule because the other reading is coherent. A
+// calendar that carries alarms everywhere it means them is a calendar saying
+// what it wants interrupted, and somebody who keeps theirs that way can turn
+// this off and be interrupted by exactly what they asked for.
+const DEFAULT_ENSURE_ALARMS = true;
+
 // When an alert is on screen, relative to its trigger, in milliseconds.
 interface ScreenSettings {
 	readonly beforeMs: number;
@@ -122,6 +137,9 @@ interface EventSettings {
 	// from the appointment, so these two blocks are the whole of its timing.
 	readonly screen: ScreenSettings;
 	readonly chime: ChimeSettings;
+	// Whether an appointment with no alarm of its own is given one at its
+	// start, so that every appointment has at least one.
+	readonly ensureAlarms: boolean;
 	// How often to read the calendars again, in milliseconds.
 	readonly refreshMs: number;
 	// How old the last successful read may be before a failure to read again is
@@ -172,6 +190,7 @@ const eventSettings = (config: ConfigSection): EventSettings => ({
 	calendars: config.strings(CALENDARS_KEY),
 	screen: screenIn(config.section(SCREEN_KEY)),
 	chime: chimeIn(config.section(CHIME_KEY)),
+	ensureAlarms: config.boolean(ENSURE_ALARMS_KEY, DEFAULT_ENSURE_ALARMS),
 	refreshMs:
 		config.number(REFRESH_KEY, DEFAULT_REFRESH_MINUTES) * MS_PER_MINUTE,
 	staleMs: config.number(STALE_KEY, DEFAULT_STALE_HOURS) * MS_PER_HOUR,
@@ -184,10 +203,12 @@ export {
 	DEFAULT_CHIME_BEFORE_SECONDS,
 	DEFAULT_CHIME_EVERY_SECONDS,
 	DEFAULT_CHIME_UNTIL_SECONDS,
+	DEFAULT_ENSURE_ALARMS,
 	DEFAULT_REFRESH_MINUTES,
 	DEFAULT_SCREEN_BEFORE_SECONDS,
 	DEFAULT_SCREEN_UNTIL_SECONDS,
 	DEFAULT_STALE_HOURS,
+	ENSURE_ALARMS_KEY,
 	REFRESH_KEY,
 	SCREEN_KEY,
 	STALE_KEY,

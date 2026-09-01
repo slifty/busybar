@@ -122,9 +122,8 @@ speaking twice.
 So each trigger gets its own window, and each is answered on its own. Pressing a
 button on the half-hour reminder does not silence the one at ten o'clock.
 
-**An appointment whose calendar names no instant gets no alert.** Nothing here
-invents one, which matters more than it sounds: most entries in a real calendar
-carry no alarm at all.
+An appointment whose calendar names no instant is given one anyway — see
+[the default trigger](#the-default-trigger).
 
 Alarms are read against the occurrence rather than the series, so a recurring
 entry's reminder lands on each day's own start, and an occurrence the calendar
@@ -144,6 +143,28 @@ interrupt somebody:
 entry's end, which is a reminder about a thing finishing. It is held to the same
 rule as everything else, so one on an entry long enough to outrun it lands after
 the start and is dropped like any other late trigger.
+
+## The default trigger
+
+Most entries in a real calendar carry no alarm at all. Measured against one,
+6,625 of 7,291 entries — **91%** — had none, so what happens to those is not an
+edge case, it is what the program mostly does.
+
+**They are treated as asking to be reminded at their own start.** With
+`screen.before` at five minutes, that puts the alert exactly where this bar has
+always put it: yellow at 09:55 for a ten o'clock, chiming from 09:59:30, down at
+10:02.
+
+`ensure_alarms: false` turns it off, and then the bar speaks only about entries
+that asked. That is a coherent way to keep a calendar — alarms written everywhere you
+mean them, and a bar that interrupts you for exactly those and nothing else —
+but it is not the common one, and a bar silent about nine meetings in ten is
+indistinguishable from a bar that is broken. So it is on unless you say
+otherwise.
+
+Only entries that asked for nothing are given one. An entry carrying a single
+alarm half an hour out has asked, and gets that and only that — no second alert
+at the start, because it did not ask for one.
 
 ## The two windows
 
@@ -481,6 +502,7 @@ chime, when a sooner appointment's window opens, and when it ends.
 | Setting         | Default | What it does                                                                               |
 | --------------- | ------- | ------------------------------------------------------------------------------------------ |
 | `calendars`     | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
+| `ensure_alarms` | `true`  | Whether an entry with no alarm of its own is given one at its start                        |
 | `screen.before` | `300`   | Seconds before a trigger that the alert goes on screen                                     |
 | `screen.until`  | `120`   | Seconds after it that the alert comes down, unanswered                                     |
 | `chime.before`  | `30`    | Seconds before a trigger that the alert starts chiming                                     |

@@ -42,6 +42,8 @@ interface ConfigSection {
 	// A count of minutes or seconds that cannot be zero, for the ones where
 	// zero would mean "as fast as possible" rather than "not at all".
 	readonly positiveNumber: (key: string, fallback: number) => number;
+	// A yes or no, or the default when the setting is absent.
+	readonly boolean: (key: string, fallback: boolean) => boolean;
 	// A block nested inside this one. Absent is empty rather than an error, so
 	// a block nobody has written reads as one where nothing was set.
 	readonly section: (key: string) => ConfigSection;
@@ -158,6 +160,25 @@ const createSection = (
 			.filter((entry) => entry !== BLANK);
 	};
 
+	// A yes or a no, and only what YAML already decided was one.
+	//
+	// Taking YAML at its word for the same reason a number does: `"false"` in
+	// quotes is text, and reading it as a no would turn a typo into a setting
+	// that quietly does the opposite of what the file says.
+	const asBoolean = (key: string): boolean | undefined => {
+		const found = at(key);
+
+		if (found === undefined || found === null) {
+			return undefined;
+		}
+
+		if (typeof found !== "boolean") {
+			throw new Error(`${file}: ${qualify(key)} must be true or false`);
+		}
+
+		return found;
+	};
+
 	// A number, and only what YAML already decided was one.
 	//
 	// Every number this file holds is a length of time, so what is refused is
@@ -215,6 +236,7 @@ const createSection = (
 		strings: asStrings,
 		number: (key, fallback) => asNumber(key) ?? fallback,
 		positiveNumber: (key, fallback) => asPositiveNumber(key) ?? fallback,
+		boolean: (key, fallback) => asBoolean(key) ?? fallback,
 		section: (key) => createSection(file, qualify(key), at(key)),
 		names: () => {
 			const keys = Object.keys(values);

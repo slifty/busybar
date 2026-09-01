@@ -12,6 +12,7 @@ import {
 import {
 	DEFAULT_CHIME_BEFORE_SECONDS,
 	DEFAULT_CHIME_EVERY_SECONDS,
+	DEFAULT_ENSURE_ALARMS,
 	DEFAULT_SCREEN_BEFORE_SECONDS,
 	DEFAULT_SCREEN_UNTIL_SECONDS,
 	eventSettings,
@@ -140,13 +141,44 @@ describe("alertsFor", () => {
 		).toStrictEqual([at("09:00").toISOString(), at("10:00").toISOString()]);
 	});
 
-	// It has named no instant to be interrupted at, so there is nothing to say
-	// about it. Giving one to an entry that asked for none is a separate
-	// question from honouring the ones that did.
-	it("gives an appointment with no alarms no alert at all", () => {
+	// Most of a real calendar names no instant at all, and a bar silent about
+	// nine meetings in ten would look broken -- so an entry that asked for
+	// nothing is given the one thing the bar knows about it.
+	describe("an appointment with no alarms of its own", () => {
 		const silent = appointment("TEST silent", "10:00", []);
 
-		expect(alertsFor([silent], DEFAULTS)).toStrictEqual([]);
+		it("is triggered at its own start", () => {
+			expect(
+				alertsFor([silent], DEFAULTS).map(({ trigger }) =>
+					trigger.toISOString(),
+				),
+			).toStrictEqual([at("10:00").toISOString()]);
+		});
+
+		// Which puts it on screen exactly where the bar has always put it.
+		it("goes on screen `screen.before` ahead of that start", () => {
+			const [alert] = alertsFor([silent], DEFAULTS);
+
+			expect(alert?.opensAt.toISOString()).toBe(at("09:55").toISOString());
+		});
+
+		it("is left alone when the file turns it off", () => {
+			const settings = settingsOf({ ensure_alarms: false });
+
+			expect(alertsFor([silent], settings)).toStrictEqual([]);
+		});
+
+		// Only entries that asked for nothing are given one. One that asked for
+		// something has already been answered.
+		it("does not gain one when the calendar named its own", () => {
+			const asked = appointment("TEST asked", "10:00", ["09:00"]);
+
+			expect(
+				alertsFor([asked], DEFAULTS).map(({ trigger }) =>
+					trigger.toISOString(),
+				),
+			).toStrictEqual([at("09:00").toISOString()]);
+		});
 	});
 
 	it("keeps the appointment on each of its alerts", () => {
@@ -339,6 +371,13 @@ describe("the defaults", () => {
 	// as how far it runs ahead of whatever instant the calendar named.
 	it("puts the screen five minutes ahead of a trigger", () => {
 		expect(DEFAULT_SCREEN_BEFORE_SECONDS).toBe(300);
+	});
+
+	// Nine entries in ten carry no alarm, and a bar quiet about those would be
+	// indistinguishable from a broken one.
+	it("supplies a trigger for an appointment that named none", () => {
+		expect(DEFAULTS.ensureAlarms).toBe(DEFAULT_ENSURE_ALARMS);
+		expect(DEFAULT_ENSURE_ALARMS).toBe(true);
 	});
 
 	// Most of an alert is meant to be silent: a yellow frame you can glance at

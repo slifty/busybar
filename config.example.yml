@@ -41,6 +41,12 @@ programs:
     # found. After that, the bar shows the failure instead.
     stale: 24
 
+    # Whether an entry whose calendar carries no alarm of its own is given one
+    # at its start, so that every appointment has at least one. Most entries in
+    # a real calendar carry none, so turning this off makes the bar speak only
+    # about the ones that asked.
+    ensure_alarms: true
+
     # When an alert is on screen, in seconds either side of the instant the
     # calendar asked to be reminded at. `before` is how far ahead of it the
     # bar starts warning you; `until` is how long it stays up afterwards while
