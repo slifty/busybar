@@ -97,44 +97,59 @@ the same code.
 
 ## How much warning
 
-**Five minutes, for everything.** `lead` in the config file moves it, in
-minutes, because how far away your meetings are is a fact about your day rather
-than about this tool.
+**Whatever the calendar asks for, or five minutes when it asks for nothing.**
 
-It used to be three numbers rather than one. The program read `LOCATION` and
-`URL`, guessed whether the thing was somewhere you had to travel to, and gave a
-room half an hour against a link's five minutes — on the argument that travel is
-the binding constraint and the cost of guessing wrong is asymmetric. The
-argument was sound. The guess was not.
+An entry says what it wants in a `VALARM`. Those are read off the entry and
+turned into the instants they land on, and the alert opens at the earliest of
+them.
 
-Measured against a real Google calendar of 7,291 entries, 86 of them carry a
-`LOCATION` that reads as a place while also carrying a conference link. Most of
-those are genuinely rooms that are also dialled into, which the guess got right.
-A meaningful minority are not. The shapes that turn up are a location naming
-the software rather than a place (`Google Meet link below`, a bare `skype`), a
-location that is a sentence about the call (`On meet now`, or a note that
-somebody will ring you), and a location naming two pieces of software at once.
-Each of those is a call taken sitting down, and each was given half an hour of
-warning it had no use for —
-and, worse, no chime at all, because the same guess decided both. The failure
-the chime exists to catch is the one you are sitting still through, and that is
-exactly the case the guess was silently removing it from.
+```
+DTSTART:20260102T100000Z
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-PT30M      ← alert opens 09:30 rather than 09:55
+END:VALARM
+```
 
-So the guess is gone rather than tuned. Every heuristic of that shape has the
-same problem: what a person types into `LOCATION` is prose, and the field means
-whatever they meant that day.
+`lead` in the config file answers for an entry that carries no alarm at all, and
+only for those. It is not a floor: an entry asking for less warning than the
+five minutes gets less, because it said so and a number meant for everything has
+no business overriding it.
 
-Five minutes is what a link used to get, and a link is what most entries in a
-calendar turn out to be. It is long enough to finish a sentence and click
-something, and deliberately not long enough to cross town. **An appointment that
-needs more warning than that has to say so itself** — which is what reading
-`VALARM` triggers off the calendar is for, and is not built yet. Until it is, an
-airport run and a desk call get the same five minutes, and the airport run is
-the one that suffers for it.
+The one thing that overrides an alarm is the chime. An alert is always on screen
+by the time it makes a noise — a bar chiming about an appointment it is not
+naming is alarming and unhelpful in the same breath — so an entry asking to be
+told as the thing begins still appears `sound.lead` ahead of it.
 
-That trade is worth stating plainly rather than burying: this change makes the
-common case right and the uncommon case worse, on the bet that the uncommon case
-is about to get a better answer than a guess.
+Alarms are read against the occurrence rather than the series, so a recurring
+entry's reminder lands on each day's own start, and an occurrence the calendar
+has edited carries the alarms of the edit.
+
+Four kinds of alarm are ignored, because not every `VALARM` is a request to
+interrupt somebody:
+
+| Ignored                          | Why                                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `ACTION:NONE`                    | A suppression, not a request — it means "do not apply your default alarm here". Apple's carries a trigger of `19760401T005545Z` |
+| `ACTION:EMAIL`                   | Asks for a message to be sent, and whoever it is sent to is not necessarily whoever is in front of the bar                      |
+| A trigger firing after the entry | Legal, and nothing a bar warning you about what is coming can do with it                                                        |
+| Anything on a dropped entry      | All-day and cancelled entries are not appointments here, so their alarms are not read                                           |
+
+`RELATED=END` is honoured rather than ignored: it measures the offset from the
+entry's end, which is a reminder about a thing finishing. It is held to the same
+rule as everything else, so one on an entry long enough to outrun it lands after
+the start and is dropped like any other late trigger.
+
+### What this does not do yet
+
+An alarm currently decides only when the alert **opens**, and an entry carrying
+several is still one alert. When it stops, and when it starts chiming, are
+measured from the appointment's own start.
+
+That has a visible cost for a long-lead alarm: a reminder set a day ahead opens
+the alert a day ahead and leaves it up until the meeting, rather than showing it
+briefly and coming back later. Giving each alarm its own bounded window is what
+the `screen` and `chime` settings are for.
 
 ## Interrupting
 
@@ -435,7 +450,7 @@ chime, when a sooner appointment's window opens, and when it ends.
 | Setting        | Default | What it does                                                                               |
 | -------------- | ------- | ------------------------------------------------------------------------------------------ |
 | `calendars`    | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
-| `lead`         | `5`     | Minutes of warning every appointment gets, whatever the calendar says about where it is    |
+| `lead`         | `5`     | Minutes of warning for an appointment whose calendar carries no alarm of its own           |
 | `sound.lead`   | `30`    | Seconds before the start that an alert starts chiming                                      |
 | `sound.linger` | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
 | `refresh`      | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |

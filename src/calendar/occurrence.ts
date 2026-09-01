@@ -31,6 +31,13 @@ interface Occurrence {
 	// A URL the calendar attached to the entry, from whichever of the places
 	// calendars put one.
 	readonly url: string | undefined;
+	// When the entry's own alarms ask to be reminded, soonest first, as
+	// instants rather than the offsets the feed writes.
+	//
+	// This is the calendar answering "how much warning is this worth?" for
+	// itself. Most entries answer nothing and the list is empty, which is a
+	// fact about the entry rather than a failure to read it.
+	readonly alarms: Date[];
 }
 
 export type { Occurrence };

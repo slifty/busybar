@@ -20,6 +20,11 @@ import type { EventSettings } from "./settings.ts";
 interface Alert {
 	readonly appointment: Appointment;
 	// When the bar starts saying something about this appointment.
+	//
+	// Whatever the calendar's own alarms asked for, or the configured lead when
+	// it asked for nothing. The alarms replace that number rather than adding
+	// to it: an entry carrying one has said how much warning it wants, and a
+	// setting meant for everything has no business overriding it.
 	readonly opensAt: Date;
 	// When it stops, whether or not anybody acknowledged it.
 	//
@@ -37,16 +42,21 @@ const alertFor = (
 	appointment: Appointment,
 	{ leadMs, sound }: EventSettings,
 ): Alert => {
+	const { alarms } = appointment;
 	const start = appointment.start.getTime();
 	const soundsFrom = new Date(start - sound.leadMs);
 
-	// The alert is on screen by the time it makes a noise, whatever the file
-	// says. Nothing stops `lead` being set shorter than `sound.lead`, and a bar
-	// chiming about an appointment it is not naming is a bar being alarming and
-	// unhelpful in the same breath.
-	const warnsFrom = new Date(start - leadMs);
-	const opensAt =
-		soundsFrom.getTime() < warnsFrom.getTime() ? soundsFrom : warnsFrom;
+	// The alarms are sorted soonest first, so the first of them is when this
+	// entry asked to start hearing about itself. `lead` answers only for an
+	// entry that asked for nothing.
+	const [asked] = alarms;
+	const warnsFrom = asked?.getTime() ?? start - leadMs;
+
+	// The alert is on screen by the time it makes a noise, whatever it asked
+	// for. A calendar is free to ask for less warning than `sound.lead`, and a
+	// bar chiming about an appointment it is not naming is a bar being alarming
+	// and unhelpful in the same breath.
+	const opensAt = new Date(Math.min(warnsFrom, soundsFrom.getTime()));
 
 	return {
 		appointment,

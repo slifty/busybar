@@ -33,8 +33,9 @@ programs:
     #   # personal
     #   - local/personal.ics
 
-    # The minutes of warning every appointment gets, whatever the calendar
-    # says about where it is.
+    # The minutes of warning for an appointment whose calendar carries no
+    # alarm of its own. An entry that carries one is warned about when its
+    # alarm asks, whether that is more warning than this or less.
     lead: 5
 
     # The minutes between reads of the calendars. This is the longest an

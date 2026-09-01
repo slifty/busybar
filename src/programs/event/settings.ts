@@ -84,11 +84,12 @@ interface EventSettings {
 	// An empty list is not an error here. It is the program's own `start` that
 	// refuses it, so that the message can say what to do about it.
 	readonly calendars: string[];
-	// How much warning an appointment gets, in milliseconds.
+	// How much warning an appointment whose calendar asks for none gets, in
+	// milliseconds.
 	//
-	// One number for every appointment -- see LEAD_MINUTES. How far away
-	// somebody's meetings are is a fact about their day, so the file is where
-	// it gets stated.
+	// See LEAD_MINUTES. How far away somebody's meetings are is a fact about
+	// their day, so the file is where it gets stated -- for the entries that
+	// leave the question open.
 	readonly leadMs: number;
 	readonly sound: SoundSettings;
 	// How often to read the calendars again, in milliseconds.

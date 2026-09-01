@@ -50,6 +50,7 @@ const settle = async (): Promise<void> => {
 const appointment = (name: string, start: string): Appointment => ({
 	name,
 	start: new Date(start),
+	alarms: [],
 });
 
 describe("fingerprint", () => {

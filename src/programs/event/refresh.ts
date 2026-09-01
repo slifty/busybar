@@ -19,13 +19,20 @@ import type { EventSettings } from "./settings.ts";
 
 // A fingerprint of what was read, for telling a change from a re-read.
 //
-// The bar only ever speaks about an appointment's name and start, so two reads
-// that agree about both are the same day as far as anything here is concerned
-// -- and a redraw for a feed that merely changed the ordering of its entries
-// would be a redraw nobody could see.
+// The bar only ever speaks about an appointment's name, start and alarms, so
+// two reads that agree about all three are the same day as far as anything here
+// is concerned -- and a redraw for a feed that merely changed the ordering of
+// its entries would be a redraw nobody could see.
+//
+// The alarms are in it because they move when the alert opens: a reminder added
+// on a phone changes nothing else about the entry, and would otherwise read as
+// a day nobody had touched.
 const fingerprint = (appointments: readonly Appointment[]): string =>
 	appointments
-		.map(({ name, start }) => `${start.toISOString()} ${name}`)
+		.map(
+			({ name, start, alarms }) =>
+				`${start.toISOString()} ${alarms.map((alarm) => alarm.toISOString()).join(",")} ${name}`,
+		)
 		.sort()
 		.join("\n");
 

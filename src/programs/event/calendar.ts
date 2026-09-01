@@ -13,6 +13,9 @@ import type { Appointment } from "./appointment.ts";
 // appointment gets is not a question about where it is -- see `LEAD_MINUTES`.
 // They stay on `Occurrence` because that type carries what the calendar said
 // rather than what a program wanted.
+//
+// What is read instead is the entry's alarms, which are the calendar asking for
+// a particular amount of warning rather than this program inferring one.
 
 // One occurrence, as an appointment -- or nothing, when the calendar says
 // something this program has no use for.
@@ -43,7 +46,7 @@ const appointmentFrom = (occurrence: Occurrence): Appointment | undefined => {
 		return undefined;
 	}
 
-	return { name, start: occurrence.start };
+	return { name, start: occurrence.start, alarms: occurrence.alarms };
 };
 
 // Reads an iCalendar feed into the appointments that fall near `now`.

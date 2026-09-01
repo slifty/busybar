@@ -16,9 +16,14 @@ import type { EventSettings } from "../settings.ts";
 
 const at = (time: string): Date => new Date(`2026-01-02T${time}:00Z`);
 
-const appointment = (name: string, start: string): Appointment => ({
+const appointment = (
+	name: string,
+	start: string,
+	alarms: string[] = [],
+): Appointment => ({
 	name,
 	start: at(start),
+	alarms: alarms.map(at),
 });
 
 // What the program does when nobody has written a `lead` or `sound` block,
@@ -92,6 +97,79 @@ describe("alertFor", () => {
 		expect(alert.opensAt.getTime()).toBeLessThanOrEqual(
 			alert.soundsFrom.getTime(),
 		);
+	});
+
+	// A VALARM is the calendar saying how much warning it wants, which is the
+	// one per-appointment answer to that question there is.
+	describe("when the calendar carries its own alarms", () => {
+		it("opens at the alarm rather than at the lead", () => {
+			const early = appointment("TEST early", "10:00", ["09:30"]);
+
+			expect(alertFor(early, DEFAULTS).opensAt.toISOString()).toBe(
+				at("09:30").toISOString(),
+			);
+		});
+
+		// The alarm replaces the lead rather than adding to it, so an entry
+		// asking for less warning than everything else gets less. `lead` is
+		// what to do when an entry says nothing, not a floor under what it
+		// says.
+		it("opens later than the lead when the alarm asks for less", () => {
+			const late = appointment("TEST late", "10:00", ["09:58"]);
+
+			expect(alertFor(late, DEFAULTS).opensAt.toISOString()).toBe(
+				at("09:58").toISOString(),
+			);
+		});
+
+		// Except that it is always on screen by the time it chimes: a bar
+		// making a noise about something it is not naming is alarming and
+		// unhelpful in the same breath.
+		it("is still on screen by the time it chimes", () => {
+			const atStart = appointment("TEST at start", "10:00", ["10:00"]);
+			const alert = alertFor(atStart, DEFAULTS);
+
+			expect(alert.opensAt.toISOString()).toBe(
+				new Date("2026-01-02T09:59:30Z").toISOString(),
+			);
+			expect(alert.opensAt.getTime()).toBeLessThanOrEqual(
+				alert.soundsFrom.getTime(),
+			);
+		});
+
+		it("takes the earliest when there are several", () => {
+			const several = appointment("TEST several", "10:00", [
+				"09:30",
+				"09:50",
+				"10:00",
+			]);
+
+			expect(alertFor(several, DEFAULTS).opensAt.toISOString()).toBe(
+				at("09:30").toISOString(),
+			);
+		});
+
+		it("keeps the lead for an appointment that carries none", () => {
+			const quiet = appointment("TEST quiet", "10:00", []);
+
+			expect(alertFor(quiet, DEFAULTS).opensAt.toISOString()).toBe(
+				at("09:55").toISOString(),
+			);
+		});
+
+		// The alarm says when to start speaking, not when to stop or when to
+		// start chiming: those stay measured from the appointment itself.
+		it("leaves the chime and the ending where they were", () => {
+			const early = appointment("TEST early", "10:00", ["09:30"]);
+			const alert = alertFor(early, DEFAULTS);
+
+			expect(alert.soundsFrom.toISOString()).toBe(
+				new Date("2026-01-02T09:59:30Z").toISOString(),
+			);
+			expect(alert.endsAt.toISOString()).toBe(
+				new Date("2026-01-02T10:02:00Z").toISOString(),
+			);
+		});
 	});
 });
 

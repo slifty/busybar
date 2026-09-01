@@ -10,17 +10,24 @@
 interface Appointment {
 	readonly name: string;
 	readonly start: Date;
+	// When the calendar's own alarms ask to be reminded, soonest first.
+	//
+	// Empty for most entries, since most carry no alarm at all. What is here is
+	// the calendar answering how much warning this one is worth, which is the
+	// only per-appointment answer to that question there is.
+	readonly alarms: Date[];
 }
 
-// How much warning an appointment gets, in minutes.
+// How much warning an appointment gets when its calendar asks for none, in
+// minutes.
 //
-// The same for every one. Nothing a calendar entry carries says reliably how
-// long it takes to get there: `LOCATION` is prose, and reading it as an
-// instruction misjudges a desk call as often as it catches a journey.
+// Only when it asks for none. An entry carrying an alarm has said what it
+// wants and gets that instead -- nothing else a calendar carries says
+// reliably how much warning a thing is worth, so a number meant for everything
+// is what to fall back on rather than what to insist on.
 //
 // Five minutes is long enough to finish a sentence and click a link, and
-// deliberately not long enough to cross town. An appointment that needs more
-// has to say so itself, which is what reading `VALARM` triggers is for.
+// deliberately not long enough to cross town.
 const LEAD_MINUTES = 5;
 
 // Yellow, and deliberately none of the three colours a focus block can be.
