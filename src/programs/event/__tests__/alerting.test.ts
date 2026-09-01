@@ -20,7 +20,8 @@ import {
 	timedEvent,
 } from "../../../test/event.ts";
 import { event } from "../index.ts";
-import { ALERT_SOUND, REPEAT_MS } from "../sound.ts";
+import { DEFAULT_CHIME_EVERY_SECONDS } from "../settings.ts";
+import { ALERT_SOUND } from "../sound.ts";
 import type { ProgramContext } from "../../../program.ts";
 import type { FakeBar } from "../../../test/bar.ts";
 
@@ -116,7 +117,7 @@ describe("the sound", () => {
 		vi.setSystemTime(at("09:59:45"));
 		const { nextDrawInMs } = await event.draw(context);
 
-		expect(nextDrawInMs).toBe(REPEAT_MS);
+		expect(nextDrawInMs).toBe(DEFAULT_CHIME_EVERY_SECONDS * MS_PER_SECOND);
 	});
 
 	it("keeps chiming after the appointment has started", async () => {
@@ -153,7 +154,8 @@ describe("the sound", () => {
 	it("takes the time box from the file", async () => {
 		const fake = createFakeBar();
 		const context = await watching(fake, "short-box", {
-			sound: { linger: 30 },
+			screen: { until: 30 },
+			chime: { until: 30 },
 		});
 
 		vi.setSystemTime(at("10:01:00"));

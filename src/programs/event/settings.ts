@@ -9,16 +9,16 @@ import {
 	MS_PER_MINUTE,
 	MS_PER_SECOND,
 } from "../../constants/time.ts";
-import { LEAD_MINUTES } from "./appointment.ts";
 import type { ConfigSection } from "../../config/section.ts";
 
 const CALENDARS_KEY = "calendars";
-const LEAD_KEY = "lead";
 const REFRESH_KEY = "refresh";
 const STALE_KEY = "stale";
-const SOUND_KEY = "sound";
-const SOUND_LEAD_KEY = "lead";
-const SOUND_LINGER_KEY = "linger";
+const SCREEN_KEY = "screen";
+const CHIME_KEY = "chime";
+const BEFORE_KEY = "before";
+const UNTIL_KEY = "until";
+const EVERY_KEY = "every";
 
 // How often the calendars are read again, in minutes.
 //
@@ -49,30 +49,62 @@ const DEFAULT_REFRESH_MINUTES = 5;
 // most of what today holds, and one read yesterday is not today's at all.
 const DEFAULT_STALE_HOURS = 24;
 
-// How long before the start an alert begins to make a noise, in seconds.
+// How long before a trigger the alert goes on screen, in seconds.
 //
-// Thirty is what the program was asked for, and it is the number the sound is
-// for: five minutes of yellow is a thing you can look at and go back to what
-// you were doing, and thirty seconds is the point at which looking is no
-// longer enough.
-const DEFAULT_SOUND_LEAD_SECONDS = 30;
+// A trigger is an instant a calendar asked to be reminded at, and by far the
+// commonest one asks for the moment the meeting begins. Arriving exactly then
+// would make the bar an announcement rather than a warning, so the screen runs
+// ahead of every trigger by this much.
+//
+// Five minutes is long enough to finish a sentence and click a link, and
+// deliberately not long enough to cross town: an appointment that needs more
+// warning than this has a calendar that can ask for it.
+const DEFAULT_SCREEN_BEFORE_SECONDS = 300;
 
-// How long an unacknowledged sound keeps going past the start, in seconds.
+// How long an unacknowledged alert stays on screen past its trigger, in
+// seconds.
 //
 // It has to end somehow. The alert is meant to continue until it is
 // acknowledged, and an unattended bar acknowledges nothing -- so without a
-// limit, one appointment nobody was there for leaves the bar chiming until
-// somebody comes back to the desk, which is a worse thing to walk in on than a
-// missed meeting.
+// limit, one appointment nobody was there for leaves the bar lit and chiming
+// until somebody comes back to the desk, which is a worse thing to walk in on
+// than a missed meeting.
 //
 // Two minutes is long enough to reach the bar from the next room and short
 // enough that a bar left alone falls quiet before anybody minds.
-const DEFAULT_SOUND_LINGER_SECONDS = 120;
+const DEFAULT_SCREEN_UNTIL_SECONDS = 120;
 
-// The sound an appointment makes as it comes up, in milliseconds.
-interface SoundSettings {
-	readonly leadMs: number;
-	readonly lingerMs: number;
+// How long before a trigger the alert begins to make a noise, in seconds.
+//
+// Thirty is what the program was asked for: five minutes of yellow is a thing
+// you can look at and go back to what you were doing, and thirty seconds is the
+// point at which looking is no longer enough.
+const DEFAULT_CHIME_BEFORE_SECONDS = 30;
+
+// How long the noise keeps going past its trigger, in seconds.
+const DEFAULT_CHIME_UNTIL_SECONDS = 120;
+
+// How long between one playing of the chime and the next, in seconds.
+//
+// The clip is under two seconds and the alert is supposed to keep asking until
+// it is answered, so it is played again and again rather than once. Ten seconds
+// leaves a clear gap between chimes -- which is what makes it read as an alarm
+// wanting an answer rather than as a siren -- and is slow enough that a repeat,
+// which costs a draw, is not asking for one every couple of seconds.
+const DEFAULT_CHIME_EVERY_SECONDS = 10;
+
+// When an alert is on screen, relative to its trigger, in milliseconds.
+interface ScreenSettings {
+	readonly beforeMs: number;
+	readonly untilMs: number;
+}
+
+// When an alert makes a noise, relative to its trigger, and how often, in
+// milliseconds.
+interface ChimeSettings {
+	readonly beforeMs: number;
+	readonly untilMs: number;
+	readonly everyMs: number;
 }
 
 interface EventSettings {
@@ -84,14 +116,12 @@ interface EventSettings {
 	// An empty list is not an error here. It is the program's own `start` that
 	// refuses it, so that the message can say what to do about it.
 	readonly calendars: string[];
-	// How much warning an appointment whose calendar asks for none gets, in
-	// milliseconds.
+	// What the bar does around each of an appointment's triggers.
 	//
-	// See LEAD_MINUTES. How far away somebody's meetings are is a fact about
-	// their day, so the file is where it gets stated -- for the entries that
-	// leave the question open.
-	readonly leadMs: number;
-	readonly sound: SoundSettings;
+	// Every window this program draws is measured from a trigger rather than
+	// from the appointment, so these two blocks are the whole of its timing.
+	readonly screen: ScreenSettings;
+	readonly chime: ChimeSettings;
 	// How often to read the calendars again, in milliseconds.
 	readonly refreshMs: number;
 	// How old the last successful read may be before a failure to read again is
@@ -102,25 +132,46 @@ interface EventSettings {
 	readonly where: (key: string) => string;
 }
 
-const soundIn = (section: ConfigSection): SoundSettings => {
-	const sound = {
-		leadMs:
-			section.number(SOUND_LEAD_KEY, DEFAULT_SOUND_LEAD_SECONDS) *
-			MS_PER_SECOND,
-		lingerMs:
-			section.number(SOUND_LINGER_KEY, DEFAULT_SOUND_LINGER_SECONDS) *
+// Nested blocks are not checked by the runner, which only holds the program's
+// own block to what it read -- so each of these says it is done with its
+// section. Without that, `screen: befor: 1` would be a line that plainly says
+// what the bar should do and silently does nothing.
+const screenIn = (section: ConfigSection): ScreenSettings => {
+	const screen = {
+		beforeMs:
+			section.number(BEFORE_KEY, DEFAULT_SCREEN_BEFORE_SECONDS) * MS_PER_SECOND,
+		untilMs:
+			section.number(UNTIL_KEY, DEFAULT_SCREEN_UNTIL_SECONDS) * MS_PER_SECOND,
+	};
+
+	section.done();
+
+	return screen;
+};
+
+const chimeIn = (section: ConfigSection): ChimeSettings => {
+	const chime = {
+		beforeMs:
+			section.number(BEFORE_KEY, DEFAULT_CHIME_BEFORE_SECONDS) * MS_PER_SECOND,
+		untilMs:
+			section.number(UNTIL_KEY, DEFAULT_CHIME_UNTIL_SECONDS) * MS_PER_SECOND,
+		// Not `number`, because zero here is not "no gap between chimes" but
+		// "no gap at all": the chime would play on every draw and ask for the
+		// next one immediately.
+		everyMs:
+			section.positiveNumber(EVERY_KEY, DEFAULT_CHIME_EVERY_SECONDS) *
 			MS_PER_SECOND,
 	};
 
 	section.done();
 
-	return sound;
+	return chime;
 };
 
 const eventSettings = (config: ConfigSection): EventSettings => ({
 	calendars: config.strings(CALENDARS_KEY),
-	leadMs: config.number(LEAD_KEY, LEAD_MINUTES) * MS_PER_MINUTE,
-	sound: soundIn(config.section(SOUND_KEY)),
+	screen: screenIn(config.section(SCREEN_KEY)),
+	chime: chimeIn(config.section(CHIME_KEY)),
 	refreshMs:
 		config.number(REFRESH_KEY, DEFAULT_REFRESH_MINUTES) * MS_PER_MINUTE,
 	staleMs: config.number(STALE_KEY, DEFAULT_STALE_HOURS) * MS_PER_HOUR,
@@ -129,14 +180,17 @@ const eventSettings = (config: ConfigSection): EventSettings => ({
 
 export {
 	CALENDARS_KEY,
+	CHIME_KEY,
+	DEFAULT_CHIME_BEFORE_SECONDS,
+	DEFAULT_CHIME_EVERY_SECONDS,
+	DEFAULT_CHIME_UNTIL_SECONDS,
 	DEFAULT_REFRESH_MINUTES,
-	DEFAULT_SOUND_LEAD_SECONDS,
-	DEFAULT_SOUND_LINGER_SECONDS,
+	DEFAULT_SCREEN_BEFORE_SECONDS,
+	DEFAULT_SCREEN_UNTIL_SECONDS,
 	DEFAULT_STALE_HOURS,
-	LEAD_KEY,
 	REFRESH_KEY,
-	SOUND_KEY,
+	SCREEN_KEY,
 	STALE_KEY,
 	eventSettings,
 };
-export type { EventSettings, SoundSettings };
+export type { ChimeSettings, EventSettings, ScreenSettings };

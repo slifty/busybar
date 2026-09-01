@@ -69,7 +69,25 @@ const unixSeconds = (date: Date): string =>
 
 // A calendar entry with a time on it, which is the only kind this program has
 // anything to say about.
-const timedEvent = (
+// An entry the bar has something to say about.
+//
+// It carries an alarm asking for the moment it begins, which is what a calendar
+// most often carries and what the bar is measured against everywhere below. An
+// entry with no alarm at all names no instant to be interrupted at, so most of
+// these tests would have nothing to look at -- `alarms` is for the cases that
+// are about something else.
+// Everything but the closing line, so the alarm can go inside the entry.
+const LAST_LINE = -1;
+
+const AT_ITS_START = [
+	"BEGIN:VALARM",
+	"ACTION:DISPLAY",
+	"TRIGGER:P0D",
+	"END:VALARM",
+];
+
+// An entry with no alarm at all, which names no instant to be interrupted at.
+const unalarmedEvent = (
 	uid: string,
 	summary: string,
 	start: string,
@@ -80,6 +98,17 @@ const timedEvent = (
 	`DTSTART:${start}`,
 	...extra,
 	`SUMMARY:${summary}`,
+	"END:VEVENT",
+];
+
+const timedEvent = (
+	uid: string,
+	summary: string,
+	start: string,
+	extra: string[] = [],
+): string[] => [
+	...unalarmedEvent(uid, summary, start, extra).slice(0, LAST_LINE),
+	...AT_ITS_START,
 	"END:VEVENT",
 ];
 
@@ -251,6 +280,7 @@ export {
 	startedContext,
 	stockSoundsPlayed,
 	timedEvent,
+	unalarmedEvent,
 	watchingOne,
 	unixSeconds,
 };

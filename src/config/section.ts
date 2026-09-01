@@ -39,6 +39,9 @@ interface ConfigSection {
 	readonly strings: (key: string) => string[];
 	// A count of minutes or seconds, or the default when the setting is absent.
 	readonly number: (key: string, fallback: number) => number;
+	// A count of minutes or seconds that cannot be zero, for the ones where
+	// zero would mean "as fast as possible" rather than "not at all".
+	readonly positiveNumber: (key: string, fallback: number) => number;
 	// A block nested inside this one. Absent is empty rather than an error, so
 	// a block nobody has written reads as one where nothing was set.
 	readonly section: (key: string) => ConfigSection;
@@ -184,11 +187,34 @@ const createSection = (
 		return found;
 	};
 
+	// A length of time that has to be more than none of it.
+	//
+	// Zero is a coherent answer to most of what this file asks -- no warning at
+	// all, no chime at all, an alert that ends the instant it began -- which is
+	// why `number` allows it. It is not a coherent answer to how long to wait
+	// between two things. A repeat every zero seconds is a repeat with no gap
+	// in it: the bar plays a chime, asks to be drawn again in no time at all,
+	// and does both as fast as it can manage until somebody stops it.
+	const asPositiveNumber = (key: string): number | undefined => {
+		const found = asNumber(key);
+
+		if (found === undefined) {
+			return undefined;
+		}
+
+		if (found <= NO_TIME) {
+			throw new Error(`${file}: ${qualify(key)} must be more than zero`);
+		}
+
+		return found;
+	};
+
 	return {
 		string: (key, fallback) => asString(key) ?? fallback,
 		optionalString: asString,
 		strings: asStrings,
 		number: (key, fallback) => asNumber(key) ?? fallback,
+		positiveNumber: (key, fallback) => asPositiveNumber(key) ?? fallback,
 		section: (key) => createSection(file, qualify(key), at(key)),
 		names: () => {
 			const keys = Object.keys(values);

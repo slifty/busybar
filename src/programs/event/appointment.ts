@@ -18,18 +18,6 @@ interface Appointment {
 	readonly alarms: Date[];
 }
 
-// How much warning an appointment gets when its calendar asks for none, in
-// minutes.
-//
-// Only when it asks for none. An entry carrying an alarm has said what it
-// wants and gets that instead -- nothing else a calendar carries says
-// reliably how much warning a thing is worth, so a number meant for everything
-// is what to fall back on rather than what to insist on.
-//
-// Five minutes is long enough to finish a sentence and click a link, and
-// deliberately not long enough to cross town.
-const LEAD_MINUTES = 5;
-
 // Yellow, and deliberately none of the three colours a focus block can be.
 //
 // Red was the other candidate and is spoken for: it is the only red this tool
@@ -39,5 +27,5 @@ const LEAD_MINUTES = 5;
 // focus block in a phase you had not seen before.
 const ALERT_COLOR = "#FFCC00FF";
 
-export { ALERT_COLOR, LEAD_MINUTES };
+export { ALERT_COLOR };
 export type { Appointment };

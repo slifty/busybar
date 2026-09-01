@@ -1,8 +1,15 @@
 import type { Appointment } from "./appointment.ts";
 import type { EventSettings } from "./settings.ts";
 
-// An appointment as the bar will actually speak about it: when it starts
-// saying so, when it starts making a noise, and when it stops.
+// One thing the bar says about an appointment: when it starts saying it, when
+// it starts making a noise, and when it stops.
+//
+// An alert is about a trigger rather than about an appointment. A trigger is an
+// instant the calendar asked to be reminded at, and an entry carrying three
+// alarms is three separate interruptions -- a nudge the day before, another an
+// hour out, and the one that catches you on the way. Each gets its own window,
+// so an early reminder shows briefly and gives the screen back rather than
+// holding it until the meeting.
 //
 // The instants are worked out once, here, rather than recomputed from the
 // settings wherever they are wanted. Two things fall out of that. Everything
@@ -19,58 +26,63 @@ import type { EventSettings } from "./settings.ts";
 // them owns 72x16 pixels at this instant.
 interface Alert {
 	readonly appointment: Appointment;
-	// When the bar starts saying something about this appointment.
-	//
-	// Whatever the calendar's own alarms asked for, or the configured lead when
-	// it asked for nothing. The alarms replace that number rather than adding
-	// to it: an entry carrying one has said how much warning it wants, and a
-	// setting meant for everything has no business overriding it.
+	// The instant this alert is about, which every other time here is measured
+	// from. It is also what tells two alerts on one appointment apart, so it is
+	// what an acknowledgement is remembered against.
+	readonly trigger: Date;
+	// When the bar starts saying something.
 	readonly opensAt: Date;
 	// When it stops, whether or not anybody acknowledged it.
 	//
-	// Later than the appointment's own start: the noise is supposed to continue
-	// until it is acknowledged, and something has to end it when nothing does.
-	// The screen going quiet while the bar was still shouting would be the bar
-	// contradicting itself.
+	// It has to end somehow: the alert is meant to continue until it is
+	// answered, and an unattended bar answers nothing.
 	readonly endsAt: Date;
-	// When the noise starts.
+	// When the noise starts, and when it stops.
+	//
+	// The chime is bounded separately from the screen, because looking at a
+	// yellow frame is a smaller thing to ask of somebody than listening to a
+	// chime and most of an alert's life should be silent.
 	readonly soundsFrom: Date;
+	readonly chimesUntil: Date;
 }
 
-// The alert for one appointment, given what the file says about warnings.
+// The alert for one of an appointment's triggers.
+//
+// The screen brackets the chime rather than the other way round. Nothing stops
+// a file asking to be chimed at further out than the alert is drawn, or after
+// it comes down, and either would be a bar making a noise about something it is
+// not naming -- alarming and unhelpful in the same breath. So the window on
+// screen is whichever of the two is wider at each end.
 const alertFor = (
 	appointment: Appointment,
-	{ leadMs, sound }: EventSettings,
+	trigger: Date,
+	{ screen, chime }: EventSettings,
 ): Alert => {
-	const { alarms } = appointment;
-	const start = appointment.start.getTime();
-	const soundsFrom = new Date(start - sound.leadMs);
-
-	// The alarms are sorted soonest first, so the first of them is when this
-	// entry asked to start hearing about itself. `lead` answers only for an
-	// entry that asked for nothing.
-	const [asked] = alarms;
-	const warnsFrom = asked?.getTime() ?? start - leadMs;
-
-	// The alert is on screen by the time it makes a noise, whatever it asked
-	// for. A calendar is free to ask for less warning than `sound.lead`, and a
-	// bar chiming about an appointment it is not naming is a bar being alarming
-	// and unhelpful in the same breath.
-	const opensAt = new Date(Math.min(warnsFrom, soundsFrom.getTime()));
+	const at = trigger.getTime();
 
 	return {
 		appointment,
-		opensAt,
-		endsAt: new Date(start + sound.lingerMs),
-		soundsFrom,
+		trigger,
+		opensAt: new Date(at - Math.max(screen.beforeMs, chime.beforeMs)),
+		endsAt: new Date(at + Math.max(screen.untilMs, chime.untilMs)),
+		soundsFrom: new Date(at - chime.beforeMs),
+		chimesUntil: new Date(at + chime.untilMs),
 	};
 };
 
+// Every alert every appointment asks for.
+//
+// An appointment whose calendar carries no alarm asks for nothing and gets
+// nothing: there is no instant it has named to be interrupted at.
 const alertsFor = (
 	appointments: readonly Appointment[],
 	settings: EventSettings,
 ): Alert[] =>
-	appointments.map((appointment) => alertFor(appointment, settings));
+	appointments.flatMap((appointment) =>
+		appointment.alarms.map((trigger) =>
+			alertFor(appointment, trigger, settings),
+		),
+	);
 
 // Whether this alert is the sort of thing that should be on screen at `at`.
 //
@@ -81,28 +93,36 @@ const isShowing = ({ opensAt, endsAt }: Alert, at: Date): boolean =>
 	opensAt.getTime() <= at.getTime() && at.getTime() < endsAt.getTime();
 
 // Whether this alert should be making a noise at `at`.
-const isSounding = ({ soundsFrom, endsAt }: Alert, at: Date): boolean =>
-	soundsFrom.getTime() <= at.getTime() && at.getTime() < endsAt.getTime();
+const isSounding = ({ soundsFrom, chimesUntil }: Alert, at: Date): boolean =>
+	soundsFrom.getTime() <= at.getTime() && at.getTime() < chimesUntil.getTime();
 
 // The alert that should be on screen at `at`, if any.
 //
-// The soonest start wins. Alerts overlap whenever two appointments are closer
-// together than the lead, and whenever one is still chiming past its own start
-// as the next one opens -- a two o'clock and a five past two overlap for the
-// whole of the first alert's linger, and at that moment the two o'clock is the
-// thing you are about to miss. Sorting by start rather than by how long the
-// alert has been up is what makes the more urgent of the two win, whichever
-// spoke first.
+// Two alerts about appointments that start at the same instant.
+const SAME_APPOINTMENT = 0;
+
+// The soonest appointment wins, whichever of its triggers is speaking. Alerts
+// overlap constantly now: two appointments close together, an early reminder
+// running into a later one, and an entry's own alarms overlapping each other.
+// At any of those moments the nearer appointment is the thing you are about to
+// miss, so that is what takes the screen.
 //
-// Ties go to whichever was read first, which `sort` being stable is what
-// preserves. Two appointments starting at the same instant are a coin toss the
-// calendar has already made.
+// Ties are broken by whichever runs longest. Two alerts for the same
+// appointment say the same thing, so which of them holds the screen is only
+// visible in when the device is told to take it down -- and picking the shorter
+// would take the alert off and put it straight back up. Anything still tied was
+// read first, which `sort` being stable preserves.
 const showingAt = (alerts: readonly Alert[], at: Date): Alert | undefined => {
 	const [soonest] = alerts
 		.filter((alert) => isShowing(alert, at))
-		.sort(
-			(a, b) => a.appointment.start.getTime() - b.appointment.start.getTime(),
-		);
+		.sort((a, b) => {
+			const byAppointment =
+				a.appointment.start.getTime() - b.appointment.start.getTime();
+
+			return byAppointment === SAME_APPOINTMENT
+				? b.endsAt.getTime() - a.endsAt.getTime()
+				: byAppointment;
+		});
 
 	return soonest;
 };
@@ -110,9 +130,9 @@ const showingAt = (alerts: readonly Alert[], at: Date): Alert | undefined => {
 // When the next alert that is not already showing would open.
 //
 // This is what the program waits for when it has nothing on screen, and what
-// stops it sleeping through an alert that opens while a longer one is up: an
-// appointment starting sooner than the one currently showing takes the screen
-// the moment its own window opens, so that instant has to be a draw.
+// stops it sleeping through an alert that opens while another is up: a nearer
+// appointment takes the screen the moment its own window opens, so that instant
+// has to be a draw.
 const nextOpensAt = (alerts: readonly Alert[], at: Date): Date | undefined => {
 	const [soonest] = alerts
 		.map(({ opensAt }) => opensAt)

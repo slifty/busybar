@@ -202,6 +202,31 @@ describe("number", () => {
 	});
 });
 
+describe("positiveNumber", () => {
+	it("reads a number like `number` does", () => {
+		expect(sectionOf({ every: 10 }).positiveNumber("every", 5)).toBe(10);
+	});
+
+	it("falls back when the setting is absent", () => {
+		expect(sectionOf({}).positiveNumber("every", 5)).toBe(5);
+	});
+
+	// The reason this is not `number`. A gap of zero between two things is not
+	// a small gap, it is no gap: whatever repeats on it repeats as fast as it
+	// can until somebody stops it.
+	it("refuses zero", () => {
+		expect(() => sectionOf({ every: 0 }).positiveNumber("every", 5)).toThrow(
+			"test-config.yml: programs.focus.every must be more than zero",
+		);
+	});
+
+	it("refuses a negative the way `number` does", () => {
+		expect(() => sectionOf({ every: -1 }).positiveNumber("every", 5)).toThrow(
+			"test-config.yml: programs.focus.every must not be negative",
+		);
+	});
+});
+
 describe("section", () => {
 	it("reads a block nested inside another", () => {
 		const root = rootOf({ device: { address: "10.0.0.1" } });

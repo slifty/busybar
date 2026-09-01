@@ -13,7 +13,7 @@ import { alertsFor, isSounding, nextOpensAt, showingAt } from "./alerts.ts";
 import { ALERT_COLOR } from "./appointment.ts";
 import { createRefresher } from "./refresh.ts";
 import { CALENDARS_KEY, eventSettings } from "./settings.ts";
-import { REPEAT_MS, playAlert, stopAlert } from "./sound.ts";
+import { playAlert, stopAlert } from "./sound.ts";
 import type { Button } from "../../input/buttons.ts";
 import type {
 	DrawResult,
@@ -23,7 +23,6 @@ import type {
 } from "../../program.ts";
 import type { Region } from "../../text.ts";
 import type { Alert } from "./alerts.ts";
-import type { Appointment } from "./appointment.ts";
 
 const BORDER_ELEMENT_ID = "event-border";
 const NAME_ELEMENT_ID = "event-name";
@@ -270,7 +269,10 @@ const unixSeconds = (date: Date): string =>
 // It is deliberately not the alert's identity written to disk anywhere.
 // Acknowledgement is a fact about the last few minutes, and a process that has
 // restarted was not there when the button was pressed.
-let onScreen: Appointment | undefined = undefined;
+//
+// The alert rather than the appointment it is about, because an entry's alarms
+// are separate interruptions and answering one must not answer the rest.
+let onScreen: Alert | undefined = undefined;
 let alarming = false;
 
 // When the chime last played.
@@ -298,6 +300,7 @@ const refresher = createRefresher();
 const keepSounding = async (
 	{ bar, applicationName, log }: ProgramContext,
 	sounding: boolean,
+	everyMs: number,
 	now: Date,
 ): Promise<number> => {
 	if (!sounding) {
@@ -316,7 +319,7 @@ const keepSounding = async (
 
 	if (
 		lastChimeAt === undefined ||
-		now.getTime() - lastChimeAt.getTime() >= REPEAT_MS
+		now.getTime() - lastChimeAt.getTime() >= everyMs
 	) {
 		await playAlert(bar, applicationName);
 		// eslint-disable-next-line require-atomic-updates -- as above
@@ -325,20 +328,27 @@ const keepSounding = async (
 
 	alarming = true;
 
-	return lastChimeAt.getTime() + REPEAT_MS - now.getTime();
+	return lastChimeAt.getTime() + everyMs - now.getTime();
 };
+
+// What a draw needs beyond the alert itself: the rest of the day, so it knows
+// when to come back, and how often the chime repeats.
+interface Drawing {
+	readonly alert: Alert;
+	readonly alerts: readonly Alert[];
+	readonly everyMs: number;
+}
 
 const drawAlert = async (
 	context: ProgramContext,
-	alert: Alert,
-	alerts: readonly Alert[],
+	{ alert, alerts, everyMs }: Drawing,
 	now: Date,
 ): Promise<DrawResult> => {
 	const { bar, applicationName, priority } = context;
 	const { appointment, endsAt, soundsFrom } = alert;
 	const remainingMs = appointment.start.getTime() - now.getTime();
 
-	// Past the start and still up, which lasts as long as `sound.linger`.
+	// Past the start and still up, which lasts as long as `screen.until`.
 	const begun = remainingMs <= NO_TIME_LEFT;
 
 	// Worked out from the clock rather than toggled, so that the frame is in
@@ -451,7 +461,7 @@ const drawAlert = async (
 	// Claimed only once the draw has landed. A draw that was refused put
 	// nothing on the screen, and a press answering an alert nobody can see
 	// would silence the one that is about to replace it.
-	onScreen = appointment;
+	onScreen = alert;
 
 	// Played on every draw for as long as the window lasts, rather than once
 	// when it opens. The clip is short and the alert is supposed to keep
@@ -460,6 +470,7 @@ const drawAlert = async (
 	const untilNextChime = await keepSounding(
 		context,
 		isSounding(alert, now),
+		everyMs,
 		now,
 	);
 
@@ -567,19 +578,23 @@ const draw = async (context: ProgramContext): Promise<DrawResult> => {
 	// calendars are is its own question, asked on its own clock.
 	const appointments = refresher.appointments();
 
-	acknowledged.keepOnly(appointments);
+	const asked = alertsFor(appointments, settings);
 
-	// An acknowledged appointment is not an alert at all. Filtering here rather
-	// than at the point of drawing means it is also not what the program waits
-	// for: an alert you have answered must not be what wakes it up.
-	const alerts = alertsFor(appointments, settings).filter(
-		({ appointment }) => !acknowledged.has(appointment),
-	);
+	acknowledged.keepOnly(asked);
+
+	// An acknowledged alert is not an alert at all. Filtering here rather than
+	// at the point of drawing means it is also not what the program waits for:
+	// an alert you have answered must not be what wakes it up.
+	const alerts = asked.filter((alert) => !acknowledged.has(alert));
 
 	const showing = showingAt(alerts, now);
 
 	if (showing !== undefined) {
-		return await drawAlert(context, showing, alerts, now);
+		return await drawAlert(
+			context,
+			{ alert: showing, alerts, everyMs: settings.chime.everyMs },
+			now,
+		);
 	}
 
 	if (alarming) {

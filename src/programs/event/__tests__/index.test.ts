@@ -306,6 +306,10 @@ describe("drawing an alert", () => {
 			"DTSTART:20260102T100000Z",
 			"DTEND:20260102T100000Z",
 			"SUMMARY:TEST Instant",
+			"BEGIN:VALARM",
+			"ACTION:DISPLAY",
+			"TRIGGER:P0D",
+			"END:VALARM",
 			"END:VEVENT",
 		);
 
@@ -353,8 +357,8 @@ describe("the lead an appointment gets", () => {
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Located");
 	});
 
-	// How far away somebody's meetings are is a fact about their day, and the
-	// file is where a fact like that gets stated.
+	// How far ahead of a trigger the bar warms up is a fact about somebody's
+	// day, and the file is where a fact like that gets stated.
 	it("takes the lead from the file when the file says one", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
@@ -366,7 +370,9 @@ describe("the lead an appointment gets", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
 
-		await event.draw(await startedContext(fake, [path], { lead: 1 }));
+		await event.draw(
+			await startedContext(fake, [path], { screen: { before: 60 } }),
+		);
 
 		expect(fake.draws).toStrictEqual([]);
 	});
