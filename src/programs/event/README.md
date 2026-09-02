@@ -95,46 +95,118 @@ correctly, because there is nothing to count down. That divergence is why the
 two programs map calendar entries separately even though they read them with
 the same code.
 
-## How much warning
+## What the bar speaks about
 
-**Five minutes, for everything.** `lead` in the config file moves it, in
-minutes, because how far away your meetings are is a fact about your day rather
-than about this tool.
+**Triggers, not appointments.** A trigger is an instant a calendar asked to be
+reminded at — a `VALARM` on the entry — and every window this program draws is
+measured from one.
 
-It used to be three numbers rather than one. The program read `LOCATION` and
-`URL`, guessed whether the thing was somewhere you had to travel to, and gave a
-room half an hour against a link's five minutes — on the argument that travel is
-the binding constraint and the cost of guessing wrong is asymmetric. The
-argument was sound. The guess was not.
+```
+DTSTART:20260102T100000Z
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-PT30M      ← a trigger at 09:30
+END:VALARM
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:P0D         ← and another at 10:00
+END:VALARM
+```
 
-Measured against a real Google calendar of 7,291 entries, 86 of them carry a
-`LOCATION` that reads as a place while also carrying a conference link. Most of
-those are genuinely rooms that are also dialled into, which the guess got right.
-A meaningful minority are not. The shapes that turn up are a location naming
-the software rather than a place (`Google Meet link below`, a bare `skype`), a
-location that is a sentence about the call (`On meet now`, or a note that
-somebody will ring you), and a location naming two pieces of software at once.
-Each of those is a call taken sitting down, and each was given half an hour of
-warning it had no use for —
-and, worse, no chime at all, because the same guess decided both. The failure
-the chime exists to catch is the one you are sitting still through, and that is
-exactly the case the guess was silently removing it from.
+An entry carrying two alarms is **two separate interruptions**, and gets two
+alerts. That is the point of carrying two: the nudge half an hour out and the
+one that catches you on the way are different messages, and a bar that ran them
+together would leave the screen yellow for the whole half hour rather than
+speaking twice.
 
-So the guess is gone rather than tuned. Every heuristic of that shape has the
-same problem: what a person types into `LOCATION` is prose, and the field means
-whatever they meant that day.
+So each trigger gets its own window, and each is answered on its own. Pressing a
+button on the half-hour reminder does not silence the one at ten o'clock.
 
-Five minutes is what a link used to get, and a link is what most entries in a
-calendar turn out to be. It is long enough to finish a sentence and click
-something, and deliberately not long enough to cross town. **An appointment that
-needs more warning than that has to say so itself** — which is what reading
-`VALARM` triggers off the calendar is for, and is not built yet. Until it is, an
-airport run and a desk call get the same five minutes, and the airport run is
-the one that suffers for it.
+An appointment whose calendar names no instant is given one anyway — see
+[the default trigger](#the-default-trigger).
 
-That trade is worth stating plainly rather than burying: this change makes the
-common case right and the uncommon case worse, on the bet that the uncommon case
-is about to get a better answer than a guess.
+Alarms are read against the occurrence rather than the series, so a recurring
+entry's reminder lands on each day's own start, and an occurrence the calendar
+has edited carries the alarms of the edit.
+
+Four kinds of alarm are ignored, because not every `VALARM` is a request to
+interrupt somebody:
+
+| Ignored                           | Why                                                                                                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACTION:NONE`                     | A suppression, not a request — it means "do not apply your default alarm here". Apple's carries a trigger of `19760401T005545Z`                                                                          |
+| `ACTION:EMAIL`                    | Asks for a message to be sent, and whoever it is sent to is not necessarily whoever is in front of the bar                                                                                               |
+| A trigger landing after the start | Legal, and nothing a bar warning you about what is coming can do with it. Where it lands is what counts, so a positive offset, a `RELATED=END` one the entry outruns, and a fixed instant are all caught |
+| Anything on a dropped entry       | All-day and cancelled entries are not appointments here, so their alarms are not read                                                                                                                    |
+
+`RELATED=END` is honoured rather than ignored: it measures the offset from the
+entry's end, which is a reminder about a thing finishing. It is held to the same
+rule as everything else, so one on an entry long enough to outrun it lands after
+the start and is dropped like any other late trigger.
+
+## The default trigger
+
+Most entries in a real calendar carry no alarm at all. Measured against one,
+6,625 of 7,291 entries — **91%** — had none, so what happens to those is not an
+edge case, it is what the program mostly does.
+
+**They are treated as asking to be reminded at their own start.** With
+`screen.before` at five minutes, that puts the alert exactly where this bar has
+always put it: yellow at 09:55 for a ten o'clock, chiming from 09:59:30, down at
+10:02.
+
+`ensure_alarms: false` turns it off, and then the bar speaks only about entries
+that asked. That is a coherent way to keep a calendar — alarms written everywhere you
+mean them, and a bar that interrupts you for exactly those and nothing else —
+but it is not the common one, and a bar silent about nine meetings in ten is
+indistinguishable from a bar that is broken. So it is on unless you say
+otherwise.
+
+Only entries that asked for nothing are given one. An entry carrying a single
+alarm half an hour out has asked, and gets that and only that — no second alert
+at the start, because it did not ask for one.
+
+## The two windows
+
+Every alert has a screen window and a chime window, both measured from its
+trigger and both set in seconds:
+
+```
+        screen.before          screen.until
+      ├───────────────┤      ├─────────────┤
+      09:55        TRIGGER 10:00         10:02
+                     ├──┤  ├─────────────┤
+              chime.before   chime.until
+```
+
+| Setting         | Default | What it is                                             |
+| --------------- | ------- | ------------------------------------------------------ |
+| `screen.before` | `300`   | How far ahead of the trigger the alert goes up         |
+| `screen.until`  | `120`   | How long it stays up afterwards, unanswered            |
+| `chime.before`  | `30`    | How far ahead of the trigger it starts making a noise  |
+| `chime.until`   | `120`   | How long the noise carries on afterwards, unanswered   |
+| `chime.every`   | `10`    | How long between one playing of the chime and the next |
+
+`screen.before` is why the commonest trigger there is — `TRIGGER:P0D`, a
+calendar asking to be told as the thing begins — is a warning rather than an
+announcement. Arriving exactly on the hour would tell you a meeting is starting,
+which you can see for yourself. Five minutes is long enough to finish a sentence
+and click a link.
+
+**The screen always brackets the chime.** Nothing stops a file asking to be
+chimed at further out than the alert is drawn, or after it comes down, and
+either would be a bar making a noise about something it is not naming — alarming
+and unhelpful in the same breath. So the window on screen is whichever of the
+two is wider at each end. The other way round is ordinary: a chime that stops
+before the screen does leaves a yellow frame up in silence, which is most of
+what an alert should be.
+
+**Both `until`s have to end somewhere.** The alert is meant to continue until it
+is answered, and an unattended bar answers nothing — so without a limit, one
+appointment nobody was there for leaves the bar lit and chiming until somebody
+comes back to the desk, which is a worse thing to walk in on than a missed
+meeting. Two minutes is long enough to reach the bar from the next room and
+short enough that a bar left alone falls quiet before anybody minds.
 
 ## Interrupting
 
@@ -153,28 +225,23 @@ bar letting you miss it.
 
 ## The sound
 
-Thirty seconds before the start, **every** appointment starts chiming: the
-firmware's own `calendar_event_starts.snd`, replayed every ten seconds until it
-is acknowledged.
+`chime.before` seconds ahead of its trigger, every alert starts chiming: the
+firmware's own `calendar_event_starts.snd`, replayed every `chime.every` seconds
+until it is answered.
 
-Every one, and it used not to be. The chime was for entries the calendar gave no
-place, on the argument that something across town is missed half an hour out
-rather than thirty seconds out, whereas a call you are meant to be on is missed
-by exactly the thirty seconds you spent not noticing. That argument still holds
-for the two cases as described. What it depended on was knowing which case you
-were in, and that came from the same guess about `LOCATION` that decided the
-lead — so a desk call misread as a room lost its chime, which is the one failure
-the chime exists for. Silencing an alert is not a thing to do on a guess.
+Every alert, without exception. Silencing one is not a thing to do on a guess
+about what it is for, and the only thing the bar knows about an appointment is
+its name and when it starts.
 
 Four and a half of the five minutes are silent. Looking at a yellow frame is
-enough until it is not, and a bar that chimed for the whole lead would be a bar
-you turn down.
+enough until it is not, and a bar that chimed for the whole window would be a
+bar you turn down.
 
 The chime is replayed rather than played once because it is under two seconds
 long and the alert is meant to keep asking. Ten seconds apart leaves a clear gap
 between chimes, which is what makes it read as an alarm wanting an answer rather
-than as a siren — and each repeat costs a draw, which costs a read of every
-calendar, so it is deliberately not faster.
+than as a siren — and each repeat costs a draw, so `chime.every` is deliberately
+not shorter.
 
 ## How an alert ends
 
@@ -183,16 +250,10 @@ the alert's end as its `display_until`, so the device takes it down itself, on
 time, and the built-in clock comes back on its own. A process that dies
 mid-alert cannot leave one stranded on the display.
 
-**Two minutes after the start, unless acknowledged.** An alert has to outlast
-its start, because it is supposed to continue until somebody says they have seen
-it, and the screen going quiet while the bar is still shouting would be the bar
-contradicting itself.
-
-There used to be a second row here: an alert with somewhere to be ended at the
-appointment's start, on the reasoning that getting you there on time is over
-once it is time. That was right about what such an alert is for and wrong about
-being able to tell which alerts those were, so it went with the guess that fed
-it.
+**`screen.until` seconds after its trigger, unless acknowledged.** An alert has
+to outlast the instant it is about, because it is supposed to continue until
+somebody says they have seen it, and the screen going quiet while the bar is
+still shouting would be the bar contradicting itself.
 
 Past the start the clock is replaced by the word **`NOW`**. The device clamps the
 digits at `00:00` rather than counting negative, which is right as far as it
@@ -209,7 +270,7 @@ and only the border moves — and the border is already the part doing the
 interrupting, so it is the part there is left to escalate.
 
 That costs a draw twice a second for as long as it goes on, which is bounded by
-`sound.linger` and is the most urgent state the tool has. It also means the
+`screen.until` and is the most urgent state the tool has. It also means the
 chime can no longer ride on the draw loop: it used to play once per draw, which
 gave a ten-second repeat only because the draws happened to be ten seconds
 apart, and would now be two solid minutes of noise. What the alert repeats and
@@ -233,14 +294,18 @@ acknowledges nothing.** Without a limit, one appointment nobody was there for
 leaves the bar chiming until somebody comes back to the desk, which is a worse
 thing to walk in on than a missed meeting. Two minutes is long enough to reach
 the bar from the next room and short enough that a bar left alone falls quiet
-before anybody minds. `sound.linger` moves it, and `0` makes an alert end at the
-appointment's start rather than after it.
+before anybody minds. `screen.until` and `chime.until` move it, and `0` makes an
+alert end at its own trigger rather than after it.
 
 ## Acknowledging it
 
 **Press any of the bar's three buttons and the alert is answered:** the sound
-stops, the alert comes off the screen, and neither comes back for that
-appointment.
+stops, the alert comes off the screen, and neither comes back for that trigger.
+
+For that trigger rather than for that appointment. An entry carrying two alarms
+asked to be interrupted twice, and answering the reminder that came early must
+not silence the one that catches you on the way out — which is the whole reason
+somebody sets two.
 
 Any of them, deliberately. The bar has three buttons and this program has one
 thing to say, and a rule about which one counts is a rule you have to remember
@@ -317,15 +382,16 @@ back meetings at 09:58 and 10:00 have windows of `[09:53, 10:00]` and
 `[09:55, 10:02]`, and they share the five minutes in between.
 
 What has to be decided is only which of them owns 72×16 pixels, and the answer
-is **whichever starts soonest**. At 09:56 the 09:58 is the thing you are about
-to miss. Exact ties go to whichever was read first.
+is **whichever appointment starts soonest**, whichever of its triggers happens
+to be speaking. At 09:56 the 09:58 is the thing you are about to miss.
 
-With one lead for everything, alerts open in the order their appointments start,
-so this is no longer a short alert cutting in front of a long one — that was the
-shape when a room got half an hour and a link got five. What it decides now is
-which of two open windows is nearer, and the handover at the end: the sooner
-alert keeps the screen past its own start, because the chime outlasts the start,
-and gives it up when its linger runs out rather than when the meeting begins.
+Overlaps are ordinary rather than exceptional now: two appointments close
+together, an entry's early reminder running into a later entry's, and an entry's
+own two alarms overlapping each other. The last of those is why a tie is broken
+by whichever alert runs longest. Two alerts on one appointment say exactly the
+same thing, so which of them holds the screen shows only in when the device is
+told to take it down — and picking the shorter would take the alert off and put
+it straight back up. Anything still tied was read first.
 
 ## The calendars
 
@@ -391,14 +457,15 @@ drawn.
 So the program now asks for no draws at all on a day with nothing left in it,
 and the refresher wakes it if that stops being true. **`refresh` is the longest a
 meeting entered on your phone can take to reach the bar** — and since an alert
-opens five minutes before the start, an appointment created less than `refresh`
-plus `lead` before it begins can be missed entirely. On the defaults that is ten
-minutes.
+opens `screen.before` ahead of its trigger, an appointment created less than
+`refresh` plus that before it begins can be missed entirely. On the defaults
+that is ten minutes.
 
-That window got wider when the lead became one number. An entry with somewhere
-to be used to carry half an hour of lead and absorb a slow refresh comfortably;
-nothing absorbs it now, so `refresh` is doing more work than it was. Shortening
-it is the lever, and the paragraph below is why that is not free.
+An entry whose calendar asks for more warning than `screen.before` absorbs a
+slow refresh comfortably. One whose only alarm is at its own start does not, so
+`refresh` is what decides whether a meeting added on the way to it is seen at
+all. Shortening it is the lever, and the paragraph below is why that is not
+free.
 
 Shortening it is not free. A read is a fetch of every feed in full, and a
 Google calendar answers that with a year of history whether or not anything in
@@ -432,18 +499,22 @@ chime, when a sooner appointment's window opens, and when it ends.
 
 ## Settings
 
-| Setting        | Default | What it does                                                                               |
-| -------------- | ------- | ------------------------------------------------------------------------------------------ |
-| `calendars`    | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
-| `lead`         | `5`     | Minutes of warning every appointment gets, whatever the calendar says about where it is    |
-| `sound.lead`   | `30`    | Seconds before the start that an alert starts chiming                                      |
-| `sound.linger` | `120`   | Seconds past the start it keeps chiming unacknowledged. `0` ends it at the start           |
-| `refresh`      | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |
-| `stale`        | `24`    | Hours since the last successful read before a failure to read is drawn rather than logged  |
+| Setting         | Default | What it does                                                                               |
+| --------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `calendars`     | —       | The appointment calendars to watch: `https` URLs or `.ics` paths. At least one is required |
+| `ensure_alarms` | `true`  | Whether an entry with no alarm of its own is given one at its start                        |
+| `screen.before` | `300`   | Seconds before a trigger that the alert goes on screen                                     |
+| `screen.until`  | `120`   | Seconds after it that the alert comes down, unanswered                                     |
+| `chime.before`  | `30`    | Seconds before a trigger that the alert starts chiming                                     |
+| `chime.until`   | `120`   | Seconds after it that the chime stops, unanswered                                          |
+| `chime.every`   | `10`    | Seconds between one playing of the chime and the next. Must be more than zero              |
+| `refresh`       | `5`     | Minutes between reads of the calendars, independent of drawing entirely                    |
+| `stale`         | `24`    | Hours since the last successful read before a failure to read is drawn rather than logged  |
 
-An alert is always on screen by the time it chimes, whatever the two blocks say.
-Nothing stops `lead` being shorter than `sound.lead`, and a bar chiming about an
-appointment it is not naming is alarming and useless in the same breath.
+The two `before`s and the two `until`s are in seconds; `refresh` and `stale` are
+in minutes and hours. An alert is always on screen by the time it chimes and for
+as long as it is chiming, whatever the two blocks say — see
+[the two windows](#the-two-windows).
 
 ---
 

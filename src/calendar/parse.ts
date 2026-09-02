@@ -1,5 +1,6 @@
 import ICAL from "ical.js";
 import { MS_PER_HOUR } from "../constants/time.ts";
+import { alarmsOf } from "./alarms.ts";
 import type { Occurrence } from "./occurrence.ts";
 
 // Turns an iCalendar feed into the occurrences that fall near a given instant.
@@ -147,6 +148,10 @@ const occurrenceFrom = (
 	allDay: start.isDate,
 	location: textProperty(item.component, "location"),
 	url: urlOf(item.component),
+	// Read against this occurrence rather than the series, so that a relative
+	// trigger lands on the right day of a recurring event -- and so that an
+	// occurrence the calendar has edited carries the alarms of the edit.
+	alarms: alarmsOf(item.component, start.toJSDate(), end.toJSDate()),
 });
 
 // When a recurring event happens, within the window.

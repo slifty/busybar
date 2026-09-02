@@ -9,10 +9,14 @@ import type { Appointment } from "./appointment.ts";
 // belongs to `src/calendar/` and is shared with `focus`. What is left here is
 // the part only this program can answer: which entries are appointments at all.
 //
-// Nothing here reads an occurrence's `location` or `url`. How much warning an
-// appointment gets is not a question about where it is -- see `LEAD_MINUTES`.
-// They stay on `Occurrence` because that type carries what the calendar said
-// rather than what a program wanted.
+// Nothing here reads an occurrence's `location` or `url`: how much warning an
+// appointment gets is not a question about where it is. They stay on
+// `Occurrence` because that type carries what the calendar said rather than
+// what a program wanted.
+//
+// What is read instead is the entry's alarms. Each one is an instant the bar
+// speaks at, and an appointment with none is an appointment the bar has nothing
+// to say about.
 
 // One occurrence, as an appointment -- or nothing, when the calendar says
 // something this program has no use for.
@@ -43,7 +47,7 @@ const appointmentFrom = (occurrence: Occurrence): Appointment | undefined => {
 		return undefined;
 	}
 
-	return { name, start: occurrence.start };
+	return { name, start: occurrence.start, alarms: occurrence.alarms };
 };
 
 // Reads an iCalendar feed into the appointments that fall near `now`.

@@ -14,16 +14,6 @@ import type { BusyBar } from "@busy-app/busy-lib";
 // does for the built-in sprites.
 const ALERT_SOUND = "shared/calendar_event_starts.snd";
 
-// How long between one playing of the chime and the next.
-//
-// The clip is under two seconds and the alert is supposed to continue until it
-// is acknowledged, so it has to be played again and again rather than once.
-// Ten seconds leaves a clear gap between chimes -- which is what makes it read
-// as an alarm asking for an answer rather than as a siren -- and is slow enough
-// that the calendars are not re-read every couple of seconds for as long as it
-// goes on, since a repeat costs a draw and a draw reads the feeds.
-const REPEAT_MS = 10_000;
-
 // Plays the chime once.
 const playAlert = async (
 	bar: BusyBar,
@@ -67,4 +57,4 @@ const stopAlert = async (
 	}
 };
 
-export { ALERT_SOUND, REPEAT_MS, playAlert, stopAlert };
+export { ALERT_SOUND, playAlert, stopAlert };

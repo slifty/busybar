@@ -202,6 +202,55 @@ describe("number", () => {
 	});
 });
 
+describe("positiveNumber", () => {
+	it("reads a number like `number` does", () => {
+		expect(sectionOf({ every: 10 }).positiveNumber("every", 5)).toBe(10);
+	});
+
+	it("falls back when the setting is absent", () => {
+		expect(sectionOf({}).positiveNumber("every", 5)).toBe(5);
+	});
+
+	// The reason this is not `number`. A gap of zero between two things is not
+	// a small gap, it is no gap: whatever repeats on it repeats as fast as it
+	// can until somebody stops it.
+	it("refuses zero", () => {
+		expect(() => sectionOf({ every: 0 }).positiveNumber("every", 5)).toThrow(
+			"test-config.yml: programs.focus.every must be more than zero",
+		);
+	});
+
+	it("refuses a negative the way `number` does", () => {
+		expect(() => sectionOf({ every: -1 }).positiveNumber("every", 5)).toThrow(
+			"test-config.yml: programs.focus.every must not be negative",
+		);
+	});
+});
+
+describe("boolean", () => {
+	it("reads a yes and a no", () => {
+		expect(sectionOf({ chiming: true }).boolean("chiming", false)).toBe(true);
+		expect(sectionOf({ chiming: false }).boolean("chiming", true)).toBe(false);
+	});
+
+	it("falls back when the setting is absent", () => {
+		expect(sectionOf({}).boolean("chiming", true)).toBe(true);
+	});
+
+	// A key with nothing after it is a line somebody meant to come back to.
+	it("falls back when the setting was written blank", () => {
+		expect(sectionOf({ chiming: null }).boolean("chiming", true)).toBe(true);
+	});
+
+	// Reading quoted text as a no would turn a typo into a setting doing the
+	// opposite of what the file plainly says.
+	it("refuses text, however much it looks like a yes", () => {
+		expect(() =>
+			sectionOf({ chiming: "true" }).boolean("chiming", false),
+		).toThrow("test-config.yml: programs.focus.chiming must be true or false");
+	});
+});
+
 describe("section", () => {
 	it("reads a block nested inside another", () => {
 		const root = rootOf({ device: { address: "10.0.0.1" } });

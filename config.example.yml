@@ -33,10 +33,6 @@ programs:
     #   # personal
     #   - local/personal.ics
 
-    # The minutes of warning every appointment gets, whatever the calendar
-    # says about where it is.
-    lead: 5
-
     # The minutes between reads of the calendars. This is the longest an
     # appointment added elsewhere can take to reach the bar.
     refresh: 5
@@ -45,13 +41,29 @@ programs:
     # found. After that, the bar shows the failure instead.
     stale: 24
 
-    # The chime an appointment makes. `lead` is the seconds before the start
-    # that it begins. `linger` is the seconds it continues after the start
-    # while nobody answers it. Set `linger` to 0 to stop the chime at the
-    # start.
-    sound:
-      lead: 30
-      linger: 120
+    # Whether an entry whose calendar carries no alarm of its own is given one
+    # at its start, so that every appointment has at least one. Most entries in
+    # a real calendar carry none, so turning this off makes the bar speak only
+    # about the ones that asked.
+    ensure_alarms: true
+
+    # When an alert is on screen, in seconds either side of the instant the
+    # calendar asked to be reminded at. `before` is how far ahead of it the
+    # bar starts warning you; `until` is how long it stays up afterwards while
+    # nobody answers it.
+    screen:
+      before: 300
+      until: 120
+
+    # When that alert makes a noise, in seconds either side of the same
+    # instant, and how often it repeats. Most of an alert is meant to be
+    # silent, so `before` is much shorter than the screen's. `every` has to be
+    # more than zero: a repeat with no gap in it is a bar chiming as fast as it
+    # can manage.
+    chime:
+      before: 30
+      until: 120
+      every: 10
 
   # Shows the focus block you are in and the time left of it.
   # What each setting does: src/programs/focus/README.md#settings

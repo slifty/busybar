@@ -17,7 +17,7 @@ import {
 } from "../../../test/event.ts";
 import { ALERT_COLOR } from "../appointment.ts";
 import { INVISIBLE, event } from "../index.ts";
-import { REPEAT_MS } from "../sound.ts";
+import { DEFAULT_CHIME_EVERY_SECONDS } from "../settings.ts";
 import type { ProgramContext } from "../../../program.ts";
 import type { FakeBar } from "../../../test/bar.ts";
 
@@ -233,7 +233,11 @@ describe("the frame, once the appointment has begun", () => {
 		vi.setSystemTime(at("10:00:00"));
 		await event.draw(context);
 
-		vi.setSystemTime(new Date(at("10:00:00").getTime() + REPEAT_MS));
+		vi.setSystemTime(
+			new Date(
+				at("10:00:00").getTime() + DEFAULT_CHIME_EVERY_SECONDS * MS_PER_SECOND,
+			),
+		);
 		await event.draw(context);
 
 		expect(fake.plays).toHaveLength(2);

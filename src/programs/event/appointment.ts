@@ -10,18 +10,13 @@
 interface Appointment {
 	readonly name: string;
 	readonly start: Date;
+	// When the calendar's own alarms ask to be reminded, soonest first.
+	//
+	// Empty for most entries, since most carry no alarm at all. What is here is
+	// the calendar answering how much warning this one is worth, which is the
+	// only per-appointment answer to that question there is.
+	readonly alarms: Date[];
 }
-
-// How much warning an appointment gets, in minutes.
-//
-// The same for every one. Nothing a calendar entry carries says reliably how
-// long it takes to get there: `LOCATION` is prose, and reading it as an
-// instruction misjudges a desk call as often as it catches a journey.
-//
-// Five minutes is long enough to finish a sentence and click a link, and
-// deliberately not long enough to cross town. An appointment that needs more
-// has to say so itself, which is what reading `VALARM` triggers is for.
-const LEAD_MINUTES = 5;
 
 // Yellow, and deliberately none of the three colours a focus block can be.
 //
@@ -32,5 +27,5 @@ const LEAD_MINUTES = 5;
 // focus block in a phase you had not seen before.
 const ALERT_COLOR = "#FFCC00FF";
 
-export { ALERT_COLOR, LEAD_MINUTES };
+export { ALERT_COLOR };
 export type { Appointment };

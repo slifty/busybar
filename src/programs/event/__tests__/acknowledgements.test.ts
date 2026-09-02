@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { createAcknowledgements } from "../acknowledgements.ts";
-import type { Appointment } from "../appointment.ts";
+import type { Alert } from "../alerts.ts";
 
-const appointment = (name: string, start: string): Appointment => ({
-	name,
-	start: new Date(`2026-01-02T${start}:00Z`),
+const at = (time: string): Date => new Date(`2026-01-02T${time}:00Z`);
+
+// Only the appointment and the trigger are looked at, so the rest of an alert
+// is filled in with the instants a trigger at the start would produce.
+const alert = (name: string, start: string, trigger = start): Alert => ({
+	appointment: { name, start: at(start), alarms: [at(trigger)] },
+	trigger: at(trigger),
+	opensAt: at(trigger),
+	endsAt: at(trigger),
+	soundsFrom: at(trigger),
+	chimesUntil: at(trigger),
 });
 
-const CALL = appointment("TEST call", "10:00");
-const LATER = appointment("TEST later", "11:00");
+const CALL = alert("TEST call", "10:00");
+const LATER = alert("TEST later", "11:00");
 
 describe("createAcknowledgements", () => {
 	it("has answered nothing to begin with", () => {
@@ -32,6 +40,18 @@ describe("createAcknowledgements", () => {
 		expect(answered.has(LATER)).toBe(false);
 	});
 
+	// The whole reason a calendar carries two alarms is that they are two
+	// interruptions. Answering the one that came early must not silence the one
+	// that catches you on the way out.
+	it("leaves another alarm on the same appointment alone", () => {
+		const answered = createAcknowledgements();
+		const early = alert("TEST call", "10:00", "09:00");
+
+		answered.acknowledge(early);
+
+		expect(answered.has(CALL)).toBe(false);
+	});
+
 	// An appointment is looked up by what the bar knows about it, which is
 	// everything it drew. A meeting moved to a different time is a different
 	// alert and has not been answered.
@@ -40,21 +60,21 @@ describe("createAcknowledgements", () => {
 
 		answered.acknowledge(CALL);
 
-		expect(answered.has(appointment(CALL.name, "10:30"))).toBe(false);
+		expect(answered.has(alert("TEST call", "10:30"))).toBe(false);
 	});
 
-	// Two calendars carrying the same meeting produce two appointments, and the
-	// bar was only ever showing one alert.
+	// Two calendars carrying the same meeting produce two alerts, and the bar
+	// was only ever showing one of them.
 	it("answers the same meeting read from two calendars at once", () => {
 		const answered = createAcknowledgements();
 
 		answered.acknowledge(CALL);
 
-		expect(answered.has(appointment(CALL.name, "10:00"))).toBe(true);
+		expect(answered.has(alert("TEST call", "10:00"))).toBe(true);
 	});
 
 	describe("keepOnly", () => {
-		it("forgets an appointment nothing can name any more", () => {
+		it("forgets an alert nothing can name any more", () => {
 			const answered = createAcknowledgements();
 
 			answered.acknowledge(CALL);
@@ -63,7 +83,7 @@ describe("createAcknowledgements", () => {
 			expect(answered.has(CALL)).toBe(false);
 		});
 
-		it("keeps an appointment that is still in the calendars", () => {
+		it("keeps an alert that is still in the calendars", () => {
 			const answered = createAcknowledgements();
 
 			answered.acknowledge(CALL);

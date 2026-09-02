@@ -22,6 +22,7 @@ import {
 	isRectangle,
 	nameLines,
 	timedEvent,
+	unalarmedEvent,
 	unixSeconds,
 } from "../../../test/event.ts";
 import { ALERT_COLOR } from "../appointment.ts";
@@ -306,6 +307,10 @@ describe("drawing an alert", () => {
 			"DTSTART:20260102T100000Z",
 			"DTEND:20260102T100000Z",
 			"SUMMARY:TEST Instant",
+			"BEGIN:VALARM",
+			"ACTION:DISPLAY",
+			"TRIGGER:P0D",
+			"END:VALARM",
 			"END:VEVENT",
 		);
 
@@ -353,8 +358,8 @@ describe("the lead an appointment gets", () => {
 		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Located");
 	});
 
-	// How far away somebody's meetings are is a fact about their day, and the
-	// file is where a fact like that gets stated.
+	// How far ahead of a trigger the bar warms up is a fact about somebody's
+	// day, and the file is where a fact like that gets stated.
 	it("takes the lead from the file when the file says one", async () => {
 		const fake = createFakeBar();
 		const path = await calendars.write(
@@ -366,9 +371,63 @@ describe("the lead an appointment gets", () => {
 
 		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
 
-		await event.draw(await startedContext(fake, [path], { lead: 1 }));
+		await event.draw(
+			await startedContext(fake, [path], { screen: { before: 60 } }),
+		);
 
 		expect(fake.draws).toStrictEqual([]);
+	});
+});
+
+// Most entries in a real calendar carry no alarm at all, so this is the path
+// nearly every appointment takes.
+describe("an entry whose calendar names no instant", () => {
+	const NO_ALARM = unalarmedEvent(
+		"unalarmed",
+		"TEST Unalarmed",
+		"20260102T100000Z",
+	);
+
+	it("is alerted about at its own start", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write("unalarmed.ics", ...NO_ALARM);
+
+		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
+
+		await event.draw(await startedContext(fake, [path]));
+
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Unalarmed");
+	});
+
+	it("is silent when the file turns it off", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write("no-ensure.ics", ...NO_ALARM);
+
+		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
+
+		await event.draw(
+			await startedContext(fake, [path], { ensure_alarms: false }),
+		);
+
+		expect(fake.draws).toStrictEqual([]);
+	});
+
+	// An entry that asked for something has already been answered, so turning
+	// this off leaves it alone.
+	it("is still alerted about when it asked and the setting is off", async () => {
+		const fake = createFakeBar();
+		const path = await calendars.write(
+			"asked.ics",
+			...timedEvent("asked", "TEST Asked", "20260102T100000Z"),
+		);
+
+		vi.setSystemTime(new Date("2026-01-02T09:56:00Z"));
+
+		await event.draw(
+			await startedContext(fake, [path], { ensure_alarms: false }),
+		);
+
+		expect(drawnName(fake.draws[0]?.elements ?? [])).toBe("TEST Asked");
 	});
 });
 
