@@ -83,6 +83,25 @@ const required = <Value>(value: Value | undefined, what: string): Value => {
 	return value;
 };
 
+// The device places an element that was sent without a position, so the types
+// allow for one. This program places everything it draws, and the geometry
+// below is asserted in those pixels -- so a position left to the device is the
+// test failing as well.
+type Placed<Shape> = Shape & { x: number; y: number };
+
+const placed = <Shape extends { x?: number; y?: number }>(
+	shape: Shape | undefined,
+	what: string,
+): Placed<Shape> => {
+	const drawn = required(shape, what);
+
+	return {
+		...drawn,
+		x: required(drawn.x, `${what}'s column`),
+		y: required(drawn.y, `${what}'s row`),
+	};
+};
+
 // The three segments, in the order they are drawn in: the whole line, the part
 // still to come over the right of it, and now over the pixel where the two
 // meet.
@@ -94,13 +113,17 @@ const required = <Value>(value: Value | undefined, what: string): Value => {
 // assertion about it ran. This way each colour is only ever asserted.
 const segmentsOf = (
 	elements: Elements,
-): { past: Rectangle; ahead: Rectangle; now: Rectangle } => {
+): {
+	past: Placed<Rectangle>;
+	ahead: Placed<Rectangle>;
+	now: Placed<Rectangle>;
+} => {
 	const [past, ahead, now] = solidsOf(elements);
 
 	return {
-		past: required(past, "time behind"),
-		ahead: required(ahead, "time ahead"),
-		now: required(now, "now"),
+		past: placed(past, "time behind"),
+		ahead: placed(ahead, "time ahead"),
+		now: placed(now, "now"),
 	};
 };
 
@@ -117,12 +140,12 @@ const alphaOf = (color: string): string =>
 	color.slice(ALPHA_START).toUpperCase();
 
 const colorOf = ({ fill_colors: colors }: Rectangle): string =>
-	(colors[0] ?? "").toUpperCase();
+	(colors?.[0] ?? "").toUpperCase();
 
 // Where the countdown's ink ends, which is two pixels short of the anchor a
 // right-aligned countdown is drawn at.
 const inkRightOf = (elements: Elements): number =>
-	required(elements.find(isCountdown), "countdown").x -
+	placed(elements.find(isCountdown), "countdown").x -
 	COUNTDOWN_METRICS.inkRight;
 
 describe("the focus progress line", () => {
@@ -133,7 +156,7 @@ describe("the focus progress line", () => {
 	it("is a single row, one row under the digits", async () => {
 		const elements = await drawingOf();
 		const { past } = segmentsOf(elements);
-		const countdown = required(elements.find(isCountdown), "countdown");
+		const countdown = placed(elements.find(isCountdown), "countdown");
 		const digitsEnd =
 			countdown.y + COUNTDOWN_METRICS.inkTop + COUNTDOWN_METRICS.inkHeight;
 
@@ -207,7 +230,7 @@ describe("the focus progress line", () => {
 		const { past, ahead, now } = segmentsOf(elements);
 
 		expect(colorOf(ahead)).toBe(AHEAD_COLOR);
-		expect(colorOf(now)).toBe(frame.border_color.toUpperCase());
+		expect(colorOf(now)).toBe(frame.border_color?.toUpperCase());
 
 		// The past is the same white turned down: every channel equal and
 		// lower, with the alpha untouched, since alpha is compositing and

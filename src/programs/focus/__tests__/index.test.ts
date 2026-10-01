@@ -229,7 +229,7 @@ describe("the focus program", () => {
 			expect(elements.find(isCountdown)?.color).toBe(colorFor("rampUp"));
 
 			for (const text of elements.filter(isText)) {
-				expect(text.color.toUpperCase()).toBe("#FFFFFFFF");
+				expect(text.color?.toUpperCase()).toBe("#FFFFFFFF");
 			}
 		});
 

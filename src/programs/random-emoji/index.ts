@@ -40,10 +40,6 @@ const draw = async ({
 				x: FRONT_DISPLAY_MIDDLE_X,
 				y: FRONT_DISPLAY_MIDDLE_Y,
 				timeout: ELEMENT_TIMEOUT_SECONDS,
-				// Required by the generated types even though the API defaults
-				// it -- openapi-typescript treats documented defaults as
-				// present rather than optional.
-				opacity: 100,
 			},
 		],
 	});

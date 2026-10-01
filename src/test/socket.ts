@@ -103,9 +103,9 @@ const fakeSockets = (): FakeSockets => {
 		// a thing the code under test has to survive, so the fake has to do it
 		// too. A fake that accepted anything would make that path untestable
 		// and, worse, make it look tested.
-		const refused = new URL(url);
-
-		void refused;
+		if (!URL.canParse(url)) {
+			throw new SyntaxError(`The URL '${url}' is invalid.`);
+		}
 
 		const socket = createFakeSocket(url);
 
