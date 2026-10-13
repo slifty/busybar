@@ -44,11 +44,11 @@ const createAcknowledgements = (): Acknowledgements => {
 	const answered = new Set<string>();
 
 	return {
-		acknowledge: (alert) => {
+		acknowledge: (alert): void => {
 			answered.add(keyOf(alert));
 		},
 		has: (alert) => answered.has(keyOf(alert)),
-		keepOnly: (alerts) => {
+		keepOnly: (alerts): void => {
 			const known = new Set(alerts.map(keyOf));
 
 			for (const key of answered) {

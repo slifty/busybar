@@ -12,14 +12,6 @@ updates:
       # @types/node tracks the Node version in .node-version, not the latest release.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-      # eslint-config-love pins its eslint peer to ^9, so eslint 10 has to wait.
-      - dependency-name: "eslint"
-        update-types: ["version-update:semver-major"]
-      # eslint-config-love 155 drops eslint-plugin-import, which our rules use.
-      - dependency-name: "eslint-config-love"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@eslint/*"
-        update-types: ["version-update:semver-major"]
       # typescript-eslint does not support TypeScript 7 yet.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]

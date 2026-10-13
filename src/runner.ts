@@ -103,13 +103,13 @@ const runningProgram = (
 		// agrees about how loudly it speaks.
 		priority: program.priority ?? DEFAULT_DRAW_PRIORITY,
 		log: scopedLog(log, program.name),
-		redraw: () => {
+		redraw: (): void => {
 			wakeups.get(program.name)?.();
 		},
 		// Everyone but the program that released it. Waking the caller as well
 		// would have a program that has just cleared the screen immediately
 		// draw over whatever it was making room for.
-		releaseScreen: () => {
+		releaseScreen: (): void => {
 			for (const [name, wake] of wakeups) {
 				if (name !== program.name) {
 					wake();

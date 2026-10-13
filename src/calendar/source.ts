@@ -104,7 +104,6 @@ const isFetchable = (source: string): boolean => {
 // more directly and cannot be faked: the suites drive these waits through
 // `vi.useFakeTimers`, which reaches the global and not the module.
 const wait = async (ms: number): Promise<void> => {
-	// eslint-disable-next-line promise/avoid-new -- a timer is the one thing there is no promise to build this out of
 	await new Promise<void>((resolve) => {
 		setTimeout(resolve, ms).unref();
 	});

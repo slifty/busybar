@@ -23,6 +23,9 @@ const NOTHING = 0;
 // typed comes after them.
 const ARGUMENTS_START = 2;
 
+// What the process exits with when the tool could not do what it was asked.
+const EXIT_FAILURE = 1;
+
 const log = (message: string): void => {
 	process.stdout.write(`busybar: ${message}\n`);
 };
@@ -88,5 +91,5 @@ try {
 	await main();
 } catch (error) {
 	process.stderr.write(`busybar: ${describe(error)}\n`);
-	process.exitCode = 1;
+	process.exitCode = EXIT_FAILURE;
 }

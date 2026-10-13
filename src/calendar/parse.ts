@@ -1,4 +1,4 @@
-import ICAL from "ical.js";
+import ical from "ical.js";
 import { MS_PER_HOUR } from "../constants/time.ts";
 import { alarmsOf } from "./alarms.ts";
 import type { Occurrence } from "./occurrence.ts";
@@ -11,11 +11,11 @@ import type { Occurrence } from "./occurrence.ts";
 // says is off. What any of it is *for* belongs to the program doing the
 // asking -- see `Occurrence`.
 //
-// `ICAL` is exposed as a namespace object rather than as named exports, so the
+// `ical` is exposed as a namespace object rather than as named exports, so the
 // instance types have to be recovered from the constructors.
-type Component = InstanceType<typeof ICAL.Component>;
-type CalendarEvent = InstanceType<typeof ICAL.Event>;
-type CalendarTime = InstanceType<typeof ICAL.Time>;
+type Component = InstanceType<typeof ical.Component>;
+type CalendarEvent = InstanceType<typeof ical.Event>;
+type CalendarTime = InstanceType<typeof ical.Time>;
 // A recurrence expansion, narrowed to the one method used and to what that
 // method really returns.
 //
@@ -232,12 +232,12 @@ const occurrencesOf = (
 // placed at the wrong hour rather than an error anybody would notice.
 const registerTimezones = (calendar: Component): void => {
 	for (const definition of calendar.getAllSubcomponents("vtimezone")) {
-		const timezone = new ICAL.Timezone(definition);
+		const timezone = new ical.Timezone(definition);
 
 		// Registered under its own TZID, which is what an event's TZID
 		// parameter will name it by.
-		if (!ICAL.TimezoneService.has(timezone.tzid)) {
-			ICAL.TimezoneService.register(timezone);
+		if (!ical.TimezoneService.has(timezone.tzid)) {
+			ical.TimezoneService.register(timezone);
 		}
 	}
 };
@@ -256,7 +256,7 @@ const eventsOf = (calendar: Component): CalendarEvent[] => {
 	const overrides: Component[] = [];
 
 	for (const vevent of calendar.getAllSubcomponents("vevent")) {
-		const event = new ICAL.Event(vevent);
+		const event = new ical.Event(vevent);
 
 		if (event.isRecurrenceException()) {
 			overrides.push(vevent);
@@ -268,7 +268,7 @@ const eventsOf = (calendar: Component): CalendarEvent[] => {
 	const orphans: CalendarEvent[] = [];
 
 	for (const vevent of overrides) {
-		const override = new ICAL.Event(vevent);
+		const override = new ical.Event(vevent);
 		const master = series.get(override.uid);
 
 		if (master === undefined) {
@@ -281,9 +281,9 @@ const eventsOf = (calendar: Component): CalendarEvent[] => {
 	return [...series.values(), ...orphans];
 };
 
-const parseJCal = (text: string, source: string): unknown => {
+const parseJcal = (text: string, source: string): unknown => {
 	try {
-		return ICAL.parse(text);
+		return ical.parse(text);
 	} catch (error) {
 		throw new Error(`${source} is not a valid iCalendar feed`, {
 			cause: error,
@@ -292,7 +292,7 @@ const parseJCal = (text: string, source: string): unknown => {
 };
 
 const parseComponent = (text: string, source: string): Component => {
-	const jcal = parseJCal(text, source);
+	const jcal = parseJcal(text, source);
 
 	// jCal is an array; a string or an object means the feed parsed as
 	// something that was never a calendar.
@@ -300,7 +300,7 @@ const parseComponent = (text: string, source: string): Component => {
 		throw new Error(`${source} is not a valid iCalendar feed`);
 	}
 
-	const calendar = new ICAL.Component(jcal);
+	const calendar = new ical.Component(jcal);
 
 	// A feed that parses but is not a calendar is usually a sign-in page or an
 	// error document served with a 200, which is worth saying plainly rather

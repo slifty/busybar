@@ -135,7 +135,7 @@ const createRefresher = (): Refresher => {
 		appointments: () => appointments,
 		readAt: () => readAt,
 		failure: () => failure,
-		begin: async (settings, context) => {
+		begin: async (settings, context): Promise<void> => {
 			// A second run in the same process -- which is every run after the
 			// first in the test suite -- must not leave the first one's timer
 			// reading on its own account.
@@ -144,7 +144,7 @@ const createRefresher = (): Refresher => {
 			await read(settings, context, false);
 			scheduleNext(settings, context);
 		},
-		stop: () => {
+		stop: (): void => {
 			clearTimeout(timer);
 		},
 	};

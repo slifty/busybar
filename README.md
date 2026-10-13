@@ -349,20 +349,18 @@ them to `.js` when it emits to `dist/`.
 - Tabs for indentation, double quotes — Prettier runs on its defaults, taking
   the tabs from [`.editorconfig`](.editorconfig). There is no Prettier config
   file.
-- ESLint uses [`eslint-config-love`](https://github.com/mightyiam/eslint-config-love)
+- ESLint uses [`@biffud/eslint-config`](https://github.com/BadIdeaFactory/eslint-config)
   as its base
 
 ## Version Constraints
 
-Two pieces of tooling are deliberately held back, and Dependabot is configured
-to leave them alone:
+One piece of tooling is deliberately held back, and Dependabot is configured to
+leave it alone:
 
 - **TypeScript is pinned to 6.x.** `typescript-eslint` declares a peer range of
   `>=4.8.4 <6.1.0`, so TypeScript 7 is not usable with the linter yet.
-- **ESLint is pinned to 9.x.** `eslint-config-love` declares a peer of `^9.35.0`
-  and does not yet accept ESLint 10.
 
-Revisit both when the upstream ranges widen.
+Revisit it when the upstream range widens.
 
 ## License
 

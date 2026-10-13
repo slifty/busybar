@@ -52,6 +52,7 @@ const createFakeBar = (): FakeBar => {
 		stopRejectsWith: undefined as Error | undefined,
 	};
 
+	/* eslint-disable @typescript-eslint/naming-convention -- these are busy-lib's names for its methods, and a fake has to answer to them */
 	const bar = {
 		DisplayDraw: async (params: DrawCall) => {
 			if (fake.drawRejectsWith !== undefined) {
@@ -90,6 +91,7 @@ const createFakeBar = (): FakeBar => {
 			return await Promise.resolve({});
 		},
 	};
+	/* eslint-enable @typescript-eslint/naming-convention */
 
 	// Assigned onto the same object the methods above close over, rather than
 	// spread into a new one -- a copy would leave a test setting

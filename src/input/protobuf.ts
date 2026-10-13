@@ -34,6 +34,11 @@ const VARINT_CONTINUES = 0x80;
 
 const NOTHING_MORE = 0;
 
+// Where a varint starts: no value yet, and its first byte lands in the lowest
+// bits.
+const NO_VALUE = 0n;
+const LOWEST_BITS = 0n;
+
 // One step along the message.
 const NEXT_BYTE = 1;
 
@@ -50,8 +55,8 @@ interface Read<T> {
 }
 
 const readVarint = (bytes: Uint8Array, from: number): Read<bigint> => {
-	let value = 0n;
-	let shift = 0n;
+	let value = NO_VALUE;
+	let shift = LOWEST_BITS;
 	let at = from;
 
 	for (;;) {
