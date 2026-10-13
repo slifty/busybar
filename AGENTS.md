@@ -502,9 +502,10 @@ against firmware reporting `api_semver` 25.0.0.
   food, hearts, and status icons. Reference them from an image element with
   `stock_path: "shared/<file>.image"`, which skips asset upload entirely.
   `/api/storage/list?path=/ext/apps_assets/shared/images` enumerates them.
-- **`opacity` is required by the generated types.** `openapi-typescript` turns
-  documented defaults into required properties, so image elements must pass it
-  explicitly even though the device would default it.
+- **The generated types mark a defaulted property optional.** `x`, `y`,
+  `color`, `fill_colors`, `border_color` and `opacity` may all be left to the
+  device, so reading one back off a recorded draw -- which is what a test does
+  -- has to allow for `undefined` even where the program always sends it.
 - **Draws expire unless told not to.** Every element carries a `timeout` in
   seconds, where `0` means "never expire", or a `display_until` timestamp.
   Anything drawn with a real timeout has to be redrawn to persist.

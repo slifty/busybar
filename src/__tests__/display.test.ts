@@ -114,7 +114,7 @@ describe("showError", () => {
 
 		const text = (fake.draws[0]?.elements ?? []).find(isText);
 
-		expect(text?.color.toUpperCase()).toMatch(/^#FF0000/v);
+		expect(text?.color?.toUpperCase()).toMatch(/^#FF0000/v);
 	});
 
 	// A failure is meant to be taken in at a glance from across the room, and
