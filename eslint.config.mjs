@@ -1,80 +1,15 @@
-import { defineConfig } from "eslint/config";
-import js from "@eslint/js";
-import love from "eslint-config-love";
-import tseslint from "typescript-eslint";
-import prettier from "eslint-config-prettier";
-import globals from "globals";
+import biffud from "@biffud/eslint-config";
 
-export default defineConfig([
-	js.configs.recommended,
-	tseslint.configs.eslintRecommended,
-	tseslint.configs.recommendedTypeChecked,
-	tseslint.configs.strict,
+export default [
+	...biffud,
 	{
-		...love,
-		languageOptions: {
-			parserOptions: {
-				project: "./tsconfig.dev.json",
-			},
-		},
-	},
-	prettier,
-	{
-		languageOptions: {
-			globals: {
-				...globals.node,
-			},
-
-			parserOptions: {
-				project: "./tsconfig.dev.json",
-			},
-		},
-
+		// Rules the code does not pass yet. Each comes out of this block in a
+		// commit of its own, alongside whatever it took to satisfy it.
 		rules: {
-			"@typescript-eslint/no-magic-numbers": [
-				"error",
-				{
-					detectObjects: false,
-					ignoreEnums: true,
-				},
-			],
-
-			// Unlike some code bases we explicitly do not want to use default exports.
-			"import/prefer-default-export": "off",
-			"import/no-default-export": "error",
-
-			"import/order": [
-				"error",
-				{
-					groups: [
-						"builtin",
-						"external",
-						"internal",
-						"parent",
-						"sibling",
-						"index",
-						"object",
-						"type",
-					],
-					"newlines-between": "never",
-				},
-			],
-
-			"@typescript-eslint/no-unused-vars": [
-				"error",
-				{
-					caughtErrors: "none",
-				},
-			],
-		},
-		settings: {
-			"import/resolver": {
-				typescript: {
-					alwaysTryTypes: true,
-					project: "./tsconfig.dev.json",
-				},
-				node: true,
-			},
+			"@typescript-eslint/explicit-function-return-type": "off",
+			"@typescript-eslint/naming-convention": "off",
+			"no-magic-numbers": "off",
+			"no-restricted-syntax": "off",
 		},
 	},
 	{
@@ -84,7 +19,7 @@ export default defineConfig([
 			// The font tables are measurements of the device, one number per
 			// glyph. There is no name to give any of them that says more than
 			// the position in the table already does.
-			"@typescript-eslint/no-magic-numbers": "off",
+			"no-magic-numbers": "off",
 		},
 	},
 	{
@@ -96,11 +31,11 @@ export default defineConfig([
 			"@typescript-eslint/explicit-function-return-type": "off",
 
 			// Tests use hard coded numbers in lots of places, and that's OK.
-			"@typescript-eslint/no-magic-numbers": "off",
+			"no-magic-numbers": "off",
 
 			// Nesting a `describe` inside a `describe` inside an `it` is how a
 			// suite is grouped, not a sign of a tangle.
 			"max-nested-callbacks": "off",
 		},
 	},
-]);
+];

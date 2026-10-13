@@ -13,7 +13,7 @@ Pomodoro timer, and a small app platform.
 
 - Node.js (see `.node-version` for the current version) with TypeScript
 - ESM throughout — `package.json` sets `"type": "module"`
-- ESLint (flat config) with `eslint-config-love` as the base
+- ESLint (flat config) with `@biffud/eslint-config` as the base
 - Prettier for formatting
 - Vitest for tests
 
@@ -103,9 +103,8 @@ npm run format
 npm run lint
 ```
 
-`npm run format` fixes Prettier formatting and ESLint auto-fixable rules
-(including import ordering). `npm run lint` additionally runs `tsc --noEmit`
-against `tsconfig.dev.json`.
+`npm run format` fixes Prettier formatting and ESLint auto-fixable rules.
+`npm run lint` additionally runs `tsc --noEmit` against `tsconfig.json`.
 
 ## Configuration
 
@@ -690,7 +689,8 @@ if it is ever rewritten:
 
 ### TypeScript
 
-1. **No default exports** — always use named exports
+1. **No default exports** — always use named exports. Nothing lints for this,
+   so it is kept by hand.
 
    ```typescript
    // Good
@@ -702,8 +702,9 @@ if it is ever rewritten:
 
 2. **No magic numbers** — pull them out into named constants
 
-3. **Import ordering** — auto-sorted: builtin, external, internal, parent,
-   sibling, index, object, type. No blank lines between groups.
+3. **Import ordering** — builtin, external, internal, parent, sibling, index,
+   object, type. No blank lines between groups. Nothing lints for this either,
+   so `npm run format` will not sort them.
 
 4. **Explicit return types** — required for all functions (except test files)
 
@@ -753,9 +754,11 @@ is what makes a file run.
 The supporting configuration, which has to stay in step with the above:
 
 - `vitest.config.ts` matches `src/**/__tests__/**/*.test.ts`.
-- `tsconfig.json` excludes `**/*.test.ts`, `**/__tests__` and `src/test`, so
-  no test code reaches `dist/`. It is all still type-checked, by
-  `npm run lint:tsc` via `tsconfig.dev.json`, which includes it.
+- `tsconfig.build.json` excludes `**/*.test.ts`, `**/__tests__` and
+  `src/test`, so no test code reaches `dist/`. It is all still type-checked, by
+  `npm run lint:tsc` via `tsconfig.json`, which includes it. The names are that
+  way round because ESLint finds types through typescript-eslint's project
+  service, which reads `tsconfig.json` and refuses any file it does not cover.
 - `eslint.config.mjs` relaxes explicit return types and magic numbers across
   all three of those patterns, so fixtures and factories get the same treatment
   as the suites using them.
@@ -849,17 +852,20 @@ cleanup — it would reformat every file in the repository.
 
 ## Version Constraints
 
-Two dependencies are deliberately held back. `.github/dependabot.yml` ignores
-major updates for both, and the reasons are worth preserving:
+One dependency is deliberately held back. `.github/dependabot.yml` ignores
+major updates for it, and the reason is worth preserving:
 
 - **TypeScript stays on 6.x.** `typescript-eslint` declares a peer range of
   `typescript: ">=4.8.4 <6.1.0"`. TypeScript 7 exists but the linter cannot
   consume it yet.
-- **ESLint stays on 9.x.** `eslint-config-love` declares a peer of
-  `eslint: "^9.35.0"`, so ESLint 10 is out of reach until that widens.
 
-If you are asked to upgrade either, verify the upstream peer ranges first
-rather than assuming they have moved.
+If you are asked to upgrade it, verify the upstream peer range first rather
+than assuming it has moved.
+
+ESLint is not held back, but it does not move alone: `@biffud/eslint-config`
+declares a peer of `eslint: "^10.0.0"`, and its own major version is the ESLint
+major it supports. The config is on a `~` range because its minor releases are
+the ones that change rules.
 
 ## CI
 
