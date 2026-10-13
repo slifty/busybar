@@ -512,6 +512,7 @@ const runPrograms = async (
 	if (started.some(({ program }) => program.onButton !== undefined)) {
 		watchButtons({
 			address: config.deviceAddress,
+			password: config.devicePassword,
 			onPress: (button) => {
 				// Every listening program hears every press. Nothing here knows
 				// which of them a press was meant for, and the device knows

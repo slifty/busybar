@@ -31,6 +31,7 @@ const PROGRAMS_KEY = "programs";
 // The block of settings about the bar itself.
 const DEVICE_KEY = "device";
 const ADDRESS_KEY = "address";
+const PASSWORD_KEY = "password";
 
 // The path from the top of the file, for the root block. It has none.
 const ROOT_PATH = "";
@@ -43,6 +44,10 @@ interface Config {
 	readonly path: string;
 	readonly found: boolean;
 	readonly deviceAddress: string;
+	// What the bar asks for before it will answer over the network: its access
+	// key, or an access token made to stand in for one. Absent over USB, which
+	// the bar trusts, and for a bar set to answer anyone on the network.
+	readonly devicePassword: string | undefined;
 	// The programs the file asks to run, in the order they were written.
 	readonly runNames: string[];
 	// Every program the file has settings for, run or not. Kept so that a
@@ -113,6 +118,7 @@ const loadConfig = async (path?: string): Promise<Config> => {
 
 	const device = root.section(DEVICE_KEY);
 	const deviceAddress = device.string(ADDRESS_KEY, DEFAULT_DEVICE_ADDRESS);
+	const devicePassword = device.optionalString(PASSWORD_KEY);
 
 	device.done();
 
@@ -126,6 +132,7 @@ const loadConfig = async (path?: string): Promise<Config> => {
 		path: file,
 		found: contents !== undefined,
 		deviceAddress,
+		devicePassword,
 		runNames,
 		configuredNames,
 		forProgram: (name) => programs.section(name),

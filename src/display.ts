@@ -122,4 +122,4 @@ const showError = async (
 	});
 };
 
-export { clearApplication, isNotHappening, isPreempted, showError };
+export { statusOf, clearApplication, isNotHappening, isPreempted, showError };

@@ -40,6 +40,19 @@ describe("loadConfig", () => {
 		expect(config.deviceAddress).toBe(DEFAULT_DEVICE_ADDRESS);
 	});
 
+	it("reads the password the bar asks for over the network", async () => {
+		const config = await loadYaml('device:\n  password: "0123"\n');
+
+		expect(config.devicePassword).toBe("0123");
+	});
+
+	// Over USB there is nothing to send, and that is how a bar is first used.
+	it("has no password unless one is written", async () => {
+		const config = await loadYaml("device:\n  address: 10.0.0.1\n");
+
+		expect(config.devicePassword).toBeUndefined();
+	});
+
 	// The order is the order they were written in, because that is the order
 	// somebody reading the file would expect them to be started in.
 	it("lists the programs to run, in the order they were written", async () => {
@@ -180,6 +193,15 @@ describe("loadConfig", () => {
 		it("when the run list is not a list", async () => {
 			await expect(loadYaml("run: focus\n")).rejects.toThrow(
 				/run must be a list/v,
+			);
+		});
+
+		// A key is digits, so this is the first thing anybody writes -- and YAML
+		// has read `0123` as 123 before the tool sees it, so the number cannot
+		// be quietly taken for the key.
+		it("when the password is a bare number, saying what to do", async () => {
+			await expect(loadYaml("device:\n  password: 0123\n")).rejects.toThrow(
+				/device\.password must be text -- put quotes around it/v,
 			);
 		});
 

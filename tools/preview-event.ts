@@ -35,10 +35,13 @@ const directory = await mkdtemp(join(tmpdir(), "busybar-preview-event-"));
 const CALENDAR_FILE = join(directory, "made-up-appointments.ics");
 
 // The real config file is read -- it is where the address of the bar is -- but
-// the address is the only thing taken from it. What the program is told is
+// how to reach the bar is the only thing taken from it. What the program is told is
 // made up below, so the calendars configured for `event` are left alone.
-const { deviceAddress } = await loadConfig();
-const bar = new BusyBar({ addr: deviceAddress });
+const { deviceAddress, devicePassword } = await loadConfig();
+const bar = new BusyBar({
+	addr: deviceAddress,
+	HTTPAccessPassword: devicePassword,
+});
 
 const sleep = async (ms: number): Promise<void> =>
 	await new Promise((resolve) => setTimeout(resolve, ms));

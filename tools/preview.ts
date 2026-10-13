@@ -28,11 +28,14 @@ const directory = await mkdtemp(join(tmpdir(), "busybar-preview-"));
 const SCHEDULE_FILE = join(directory, "made-up-schedule.json");
 
 // The real config file is read -- it is where the address of the bar is -- but
-// the address is the only thing taken from it. What the program is told is
+// how to reach the bar is the only thing taken from it. What the program is told is
 // made up below, so a calendar configured for `focus` is parsed here and then
 // left alone rather than fetched.
-const { deviceAddress } = await loadConfig();
-const bar = new BusyBar({ addr: deviceAddress });
+const { deviceAddress, devicePassword } = await loadConfig();
+const bar = new BusyBar({
+	addr: deviceAddress,
+	HTTPAccessPassword: devicePassword,
+});
 
 const sleep = async (ms: number): Promise<void> =>
 	await new Promise((resolve) => setTimeout(resolve, ms));

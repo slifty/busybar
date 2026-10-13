@@ -18,6 +18,9 @@ import type { Button } from "./buttons.ts";
 
 const STATUS_STREAM_PATH = "/api/status/ws";
 
+// The query parameter the device's access key travels in.
+const PASSWORD_PARAMETER = "x-api-token";
+
 const HTTP_SCHEME = "http://";
 const HTTPS_SCHEME = "https://";
 const WS_SCHEME = "ws://";
@@ -28,9 +31,8 @@ const ENABLE_STREAMING = JSON.stringify({ enable: true });
 
 // How long to wait before connecting again after the stream drops.
 //
-// The bar is on the end of a USB cable, so a drop is usually the cable, a
-// reboot, or a firmware update -- none of which is helped by reconnecting
-// faster, and all of which end. This is short enough that a press is being
+// A drop is usually the cable or the network, a reboot, or a firmware update
+// -- none of which is helped by reconnecting faster, and all of which end. This is short enough that a press is being
 // listened for again within a few seconds of the bar coming back, and long
 // enough that a device which is simply gone is not being dialled continuously
 // for as long as the tool runs.
@@ -44,22 +46,34 @@ const RECONNECT_DELAY_MS = 5_000;
 // thing to write, and `busy-lib` accepts both, so this does too rather than
 // having one setting mean two different things depending on which part of the
 // tool is reading it.
-const endpointFor = (address: string): string => {
+//
+// The password rides in the query string because that is the only place the
+// device will take it on this connection. The HTTP half of the tool sends it as
+// an `X-API-Token` header, and the same header on the upgrade is refused --
+// measured, with the right key. `busy-lib` puts it here too, under the same
+// name.
+const endpointFor = (address: string, password?: string): string => {
 	const trimmed = address.trim().replace(/\/+$/v, "");
+	const query =
+		password === undefined
+			? ""
+			: `?${PASSWORD_PARAMETER}=${encodeURIComponent(password)}`;
 
 	if (trimmed.startsWith(HTTPS_SCHEME)) {
-		return `${WSS_SCHEME}${trimmed.slice(HTTPS_SCHEME.length)}${STATUS_STREAM_PATH}`;
+		return `${WSS_SCHEME}${trimmed.slice(HTTPS_SCHEME.length)}${STATUS_STREAM_PATH}${query}`;
 	}
 
 	if (trimmed.startsWith(HTTP_SCHEME)) {
-		return `${WS_SCHEME}${trimmed.slice(HTTP_SCHEME.length)}${STATUS_STREAM_PATH}`;
+		return `${WS_SCHEME}${trimmed.slice(HTTP_SCHEME.length)}${STATUS_STREAM_PATH}${query}`;
 	}
 
-	return `${WS_SCHEME}${trimmed}${STATUS_STREAM_PATH}`;
+	return `${WS_SCHEME}${trimmed}${STATUS_STREAM_PATH}${query}`;
 };
 
 interface ButtonWatch {
 	readonly address: string;
+	// The device's access key, when it asks for one. See `endpointFor`.
+	readonly password: string | undefined;
 	readonly onPress: (button: Button) => void;
 	readonly log: (message: string) => void;
 	// Stops watching, and stops reconnecting. The runner's own shutdown, so
@@ -75,8 +89,14 @@ interface ButtonWatch {
 // still draws every alert it would otherwise draw -- so losing this should cost
 // acknowledgement and nothing else. What it must not do is fail silently, which
 // is why an outage is reported once, and recovery from one is reported too.
-const watchButtons = ({ address, onPress, log, signal }: ButtonWatch): void => {
-	const endpoint = endpointFor(address);
+const watchButtons = ({
+	address,
+	password,
+	onPress,
+	log,
+	signal,
+}: ButtonWatch): void => {
+	const endpoint = endpointFor(address, password);
 
 	let socket: WebSocket | undefined = undefined;
 	let reconnecting: NodeJS.Timeout | undefined = undefined;
