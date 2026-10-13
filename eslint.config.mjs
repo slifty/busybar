@@ -7,7 +7,6 @@ export default [
 		// commit of its own, alongside whatever it took to satisfy it.
 		rules: {
 			"@typescript-eslint/naming-convention": "off",
-			"no-magic-numbers": "off",
 		},
 	},
 	{
