@@ -3,13 +3,6 @@ import biffud from "@biffud/eslint-config";
 export default [
 	...biffud,
 	{
-		// Rules the code does not pass yet. Each comes out of this block in a
-		// commit of its own, alongside whatever it took to satisfy it.
-		rules: {
-			"@typescript-eslint/naming-convention": "off",
-		},
-	},
-	{
 		files: ["src/fonts.ts"],
 
 		rules: {

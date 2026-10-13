@@ -1,4 +1,4 @@
-import ICAL from "ical.js";
+import ical from "ical.js";
 import { MS_PER_SECOND } from "../constants/time.ts";
 
 // When a calendar asked to be reminded about an entry.
@@ -12,10 +12,10 @@ import { MS_PER_SECOND } from "../constants/time.ts";
 // an offset is only meaningful next to the occurrence it hangs off -- and a
 // recurring event's occurrences each have their own.
 
-// `ICAL` is exposed as a namespace object rather than as named exports, so the
+// `ical` is exposed as a namespace object rather than as named exports, so the
 // instance types have to be recovered from the constructors.
-type Component = InstanceType<typeof ICAL.Component>;
-type Property = InstanceType<typeof ICAL.Property>;
+type Component = InstanceType<typeof ical.Component>;
+type Property = InstanceType<typeof ical.Property>;
 
 // Triggers measured from the end rather than the start, which is legal and
 // rare. The parameter is absent for the ordinary case.
@@ -59,11 +59,11 @@ const landingOf = (
 ): Date | undefined => {
 	const value: unknown = trigger.getFirstValue();
 
-	if (value instanceof ICAL.Time) {
+	if (value instanceof ical.Time) {
 		return value.toJSDate();
 	}
 
-	if (!(value instanceof ICAL.Duration)) {
+	if (!(value instanceof ical.Duration)) {
 		return undefined;
 	}
 
