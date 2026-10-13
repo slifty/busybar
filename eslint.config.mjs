@@ -8,7 +8,6 @@ export default [
 		rules: {
 			"@typescript-eslint/naming-convention": "off",
 			"no-magic-numbers": "off",
-			"no-restricted-syntax": "off",
 		},
 	},
 	{
