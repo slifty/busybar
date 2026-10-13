@@ -238,7 +238,7 @@ const createSection = (
 		positiveNumber: (key, fallback) => asPositiveNumber(key) ?? fallback,
 		boolean: (key, fallback) => asBoolean(key) ?? fallback,
 		section: (key) => createSection(file, qualify(key), at(key)),
-		names: () => {
+		names: (): string[] => {
 			const keys = Object.keys(values);
 
 			keys.forEach((key) => {
@@ -248,7 +248,7 @@ const createSection = (
 			return keys;
 		},
 		where: (key) => `${qualify(key)} in ${file}`,
-		done: () => {
+		done: (): void => {
 			const unknown = Object.keys(values).filter((key) => !read.has(key));
 
 			if (unknown.length === NONE) {

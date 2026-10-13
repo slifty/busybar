@@ -6,7 +6,6 @@ export default [
 		// Rules the code does not pass yet. Each comes out of this block in a
 		// commit of its own, alongside whatever it took to satisfy it.
 		rules: {
-			"@typescript-eslint/explicit-function-return-type": "off",
 			"@typescript-eslint/naming-convention": "off",
 			"no-magic-numbers": "off",
 			"no-restricted-syntax": "off",
