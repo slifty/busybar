@@ -20,8 +20,11 @@ const FONTS = ["tiny", "small", "normal", "bold", "large"] as const;
 const FIRST_CODE = 0x20;
 const LAST_CODE = 0x7e;
 
-const { deviceAddress } = await loadConfig();
-const bar = new BusyBar({ addr: deviceAddress });
+const { deviceAddress, devicePassword } = await loadConfig();
+const bar = new BusyBar({
+	addr: deviceAddress,
+	HTTPAccessPassword: devicePassword,
+});
 
 const sleep = async (ms: number): Promise<void> =>
 	await new Promise((resolve) => setTimeout(resolve, ms));

@@ -6,9 +6,9 @@
 //
 // The address is the fixed USB-Ethernet address of a BUSY Bar plugged into
 // this machine; it is printed on the back cover of the device, so it differs
-// from one bar to the next and `device.address` overrides it. Reaching a bar
-// over Wi-Fi or the BUSY cloud proxy needs credentials as well, so that is
-// deliberately out of scope here.
+// from one bar to the next and `device.address` overrides it. A bar reached
+// over the network has another address and wants `device.password` as well;
+// the BUSY cloud proxy is deliberately out of scope here.
 const DEFAULT_DEVICE_ADDRESS = "10.0.4.20";
 
 // Draw priority a program gets unless it asks for another, in the range

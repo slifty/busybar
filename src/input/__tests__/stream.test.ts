@@ -17,13 +17,14 @@ interface Watching {
 	readonly stop: () => void;
 }
 
-const start = (address: string = ADDRESS): Watching => {
+const start = (address: string = ADDRESS, password?: string): Watching => {
 	const presses: Button[] = [];
 	const logs: string[] = [];
 	const controller = new AbortController();
 
 	watchButtons({
 		address,
+		password,
 		onPress: (button) => {
 			presses.push(button);
 		},
@@ -74,6 +75,20 @@ describe("endpointFor", () => {
 		);
 	});
 
+	// A WebSocket cannot carry the header the HTTP half sends the key in.
+	it("carries the password as a query parameter", () => {
+		expect(endpointFor("bar.test", "0123")).toBe(
+			"ws://bar.test/api/status/ws?x-api-token=0123",
+		);
+	});
+
+	// An access token stands in for a key and is not made of digits alone.
+	it("escapes a password that would not survive a URL", () => {
+		expect(endpointFor("bar.test", "a&b=c")).toBe(
+			"ws://bar.test/api/status/ws?x-api-token=a%26b%3Dc",
+		);
+	});
+
 	it("does not double the slash on an address that ends with one", () => {
 		expect(endpointFor("http://10.0.4.20/")).toBe(
 			"ws://10.0.4.20/api/status/ws",
@@ -89,6 +104,16 @@ describe("watchButtons", () => {
 		sockets.latest()?.open();
 
 		expect(sockets.latest()?.sent).toStrictEqual(['{"enable":true}']);
+
+		watching.stop();
+	});
+
+	it("connects with the password it was given", () => {
+		const watching = start(ADDRESS, "0123");
+
+		expect(sockets.latest()?.url).toBe(
+			"ws://10.0.4.20/api/status/ws?x-api-token=0123",
+		);
 
 		watching.stop();
 	});

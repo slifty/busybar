@@ -115,6 +115,7 @@ can come from — that is the point of it, and adding one back would undo it.
 ```yaml
 device:
   address: 10.0.4.20
+  password: "12345678"
 
 run:
   - focus
@@ -148,6 +149,13 @@ programs:
   `--config <file>` reads settings from somewhere else. See `src/cli.ts`.
   Anything else worth setting is worth writing down where it can carry a
   comment.
+- **`device.password` is the bar's access key, and only matters off USB.** It
+  reaches the bar two ways, because the tool has two connections: `BusyBar`
+  sends it as an `X-API-Token` header, and `src/input/stream.ts` puts it in the
+  WebSocket's query string, the only place the device takes it there. Anything new
+  that talks to the bar has to send it too — the `tools/` scripts do. It is
+  never printed: `src/access.ts` names the setting when the bar refuses, not
+  the value.
 - **Nothing is mandatory.** Every setting has a default and a missing file is
   ordinary, so the tool runs with no configuration at all. A file named with
   `--config` is the exception: asking for one by name and silently getting the
@@ -185,6 +193,7 @@ display geometry — are not configuration and live in
 
 ```
 src/
+├── access.ts       # What to say when the bar refuses the tool
 ├── cli.ts          # The command line: which config file, which programs
 ├── display.ts      # Shared display helpers (clear, preemption detection)
 ├── errors.ts       # Turns a thrown thing into a line, causes and all
@@ -573,12 +582,26 @@ against firmware reporting `api_semver` 25.0.0.
   the WebSocket upgrade at `/api/status/ws` both answer **403**, while over USB
   they answer 200 and 101. The 403 on the _upgrade_ is the load-bearing part --
   the Wi-Fi interface is serving the same HTTP server and the same routes, so
-  nothing here is USB-only by transport. It is USB-only because no credential is
-  sent: `src/index.ts` builds `BusyBar` with an address and nothing else. In
-  `key` mode the key goes in an `X-API-Token` header, and `busy-lib` puts it in a
-  `?x-api-token=` query parameter for the WebSocket, since a browser socket
-  cannot set headers -- whether the firmware accepts it there is **not**
-  verified.
+  nothing here is USB-only by transport, only by credential. `/api/version` is
+  the one route that answers on Wi-Fi regardless. The refusal is the same bare
+  `{"error":"Forbidden"}` whether access is off or the key is wrong, so nothing
+  can tell the two apart from outside -- see `src/access.ts`.
+- **In `key` mode the WebSocket takes the key as `?x-api-token=`, and HTTP does
+  not.** Measured over Wi-Fi with `key` mode on, against `api_semver` 27.5.0: the upgrade at `/api/status/ws`
+  answers 101 with the right key in the query string and 403 with a wrong one or
+  none, while `GET /api/name?x-api-token=<key>` is still 403 -- HTTP wants the
+  `X-API-Token` header. So the two connections carry the same credential in
+  different places, which is what `busy-lib` does as well, and state messages
+  flow over the keyed socket as they do over USB. The header is not an
+  alternative for the socket: an upgrade carrying the right key as `X-API-Token`
+  and nothing in the query string is refused with 403, so moving the key out of
+  the URL is not something this firmware allows.
+- **The bar does not speak TLS.** Ports 443 and 8443 are closed on both
+  interfaces and the spec lists no `https` server, so the key crosses the
+  network in the clear wherever it is put. The network is the trust boundary.
+- **A long access token can stand in for the key.** `POST /api/access/tokens`
+  makes one, shown once, usable wherever the key is. Unused so far, and why
+  `device.password` is text rather than digits.
 - **The cloud proxy's state stream is a different protocol from the device's.**
   `RemoteStateStream` defaults to `isBinary: false` -- JSON rather than protobuf
   -- and requires a `SUBSCRIBE {guid}` command. `src/input/` decodes protobuf, so

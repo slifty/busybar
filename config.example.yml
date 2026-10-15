@@ -11,6 +11,10 @@ device:
   # The address of the bar, printed on its back cover. Each bar has its own.
   address: 10.0.4.20
 
+  # The key the bar asks for over the network, in quotes. Leave it out over
+  # USB, which needs none. See README.md#connecting
+  # password: "00000000"
+
 # ── The programs to run ───────────────────────────────────────────────────────
 run:
   # - hello-world

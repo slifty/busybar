@@ -26,8 +26,11 @@ const DRAW_Y = 3;
 const COLUMN = 14;
 const COLUMNS = 5;
 
-const { deviceAddress } = await loadConfig();
-const bar = new BusyBar({ addr: deviceAddress });
+const { deviceAddress, devicePassword } = await loadConfig();
+const bar = new BusyBar({
+	addr: deviceAddress,
+	HTTPAccessPassword: devicePassword,
+});
 
 const sleep = async (ms: number): Promise<void> =>
 	await new Promise((resolve) => setTimeout(resolve, ms));

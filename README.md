@@ -16,11 +16,29 @@ is what this project intends to build on.
 
 ## Connecting
 
-Everything here expects a BUSY Bar connected over USB. The device appears as a
-USB-Ethernet adapter at a fixed address — `10.0.4.20` unless `device.address`
+Out of the box this expects a BUSY Bar connected over USB. The device appears as
+a USB-Ethernet adapter at a fixed address — `10.0.4.20` unless `device.address`
 says otherwise, and printed on the back cover of the bar — and USB is treated
-as a trusted channel, so no token or password is involved. Wi-Fi and cloud
-access both need credentials and are not wired up.
+as a trusted channel, so no token or password is involved.
+
+A bar on the same network works too, once it has been told to answer there.
+HTTP access over Wi-Fi is off until you turn it on in the bar's settings, where
+it takes a key of four to ten digits. Give the tool the bar's network address
+and that key:
+
+```yaml
+device:
+  address: 192.168.0.10
+  password: "12345678"
+```
+
+The quotes matter: YAML reads bare digits as a number and drops a leading zero
+on the way, so an unquoted key is refused rather than guessed at. An access
+token made on the bar goes in the same setting. If the bar refuses the tool at
+startup it exits saying so, and naming this setting — a refused tool cannot draw
+its own error.
+
+The cloud proxy at `api.busy.app` is not wired up.
 
 ## Programs
 

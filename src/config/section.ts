@@ -116,6 +116,17 @@ const createSection = (
 			return undefined;
 		}
 
+		// Said separately because it is the mistake a key made of digits
+		// invites, and because YAML has already spoiled the value by the time
+		// it gets here: `0123` was read as the number 123, so taking the
+		// number and turning it back into text would hand on a different key
+		// from the one in the file.
+		if (typeof found === "number") {
+			throw new Error(
+				`${file}: ${qualify(key)} must be text -- put quotes around it`,
+			);
+		}
+
 		if (typeof found !== "string") {
 			throw new Error(`${file}: ${qualify(key)} must be text`);
 		}

@@ -6,6 +6,7 @@
 // the device, and hands over to the runner.
 
 import { BusyBar } from "@busy-app/busy-lib";
+import { explainRefusal, isRefused } from "./access.ts";
 import { parseCommandLine, usage } from "./cli.ts";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "./config/index.ts";
 import { describe } from "./errors.ts";
@@ -67,11 +68,22 @@ const main = async (): Promise<void> => {
 
 	const programs = programsToRun(requested, config.path);
 
-	const bar = new BusyBar({ addr: config.deviceAddress });
+	const bar = new BusyBar({
+		addr: config.deviceAddress,
+		HTTPAccessPassword: config.devicePassword,
+	});
 
 	// Fail loudly and immediately if the bar is not reachable, rather than
-	// leaving the process running with nothing on screen.
-	const { name } = await bar.SettingsNameGet();
+	// leaving the process running with nothing on screen. A bar that is there
+	// and will not answer is the one case with something better to say than
+	// what it said itself.
+	const { name } = await bar.SettingsNameGet().catch((error: unknown) => {
+		if (isRefused(error)) {
+			throw explainRefusal(error, config);
+		}
+
+		throw error;
+	});
 
 	log(`connected to "${name}" at ${config.deviceAddress}`);
 

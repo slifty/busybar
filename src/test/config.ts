@@ -24,6 +24,7 @@ const configOf = (
 	path: TEST_CONFIG_FILE,
 	found: true,
 	deviceAddress: DEFAULT_DEVICE_ADDRESS,
+	devicePassword: undefined,
 	runNames: Object.keys(programs),
 	configuredNames: Object.keys(programs),
 	forProgram: (name) =>
