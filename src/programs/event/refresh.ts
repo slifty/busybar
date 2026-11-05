@@ -80,13 +80,13 @@ const createRefresher = (): Refresher => {
 		wake: boolean,
 	): Promise<void> => {
 		const before = fingerprint(appointments);
-		const read = await loadAppointments(settings);
+		const latest = await loadAppointments(settings);
 
 		// Reads never overlap: the first is awaited, and each one afterwards is
 		// scheduled only once the last has finished, so there is no interleaved
 		// update to lose.
 		// eslint-disable-next-line require-atomic-updates -- reads are serialised by the loop below
-		appointments = read;
+		appointments = latest;
 		readAt = new Date();
 		failure = undefined;
 
